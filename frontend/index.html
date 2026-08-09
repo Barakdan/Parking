@@ -77,7 +77,7 @@
       <button id="checkButton" class="button-link" type="button">
         Check Parking Here
       </button>
-      <p id="status" class="note">Set VITE_API_URL in your Render env before building.</p>
+      <p id="status" class="note">Checking configuration…</p>
     </main>
     <script type="module">
       const button = document.getElementById('checkButton');
@@ -88,6 +88,13 @@
         status.textContent = message;
         status.style.color = isError ? '#b91c1c' : '#64748b';
       }
+
+      setStatus(
+        apiUrl
+          ? 'Ready. Tap the button to share location.'
+          : 'VITE_API_URL is not configured at build time. Check frontend Render env.',
+        !apiUrl
+      );
 
       async function sendLocation(position) {
         if (!apiUrl) {
