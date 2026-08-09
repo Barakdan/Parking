@@ -210,6 +210,8 @@
         const reader = new FileReader();
         reader.onload = async () => {
           const imageData = reader.result;
+          const dataUrl = typeof imageData === 'string' ? imageData : '';
+          const base64 = dataUrl.split(',')[1] ?? '';
           try {
             const response = await fetch(apiUrl, {
               method: 'POST',
@@ -223,8 +225,8 @@
                 locationOnly: false,
                 signImages: [
                   {
-                    content: typeof imageData === 'string' ? imageData : '',
-                    filename: file.name,
+                    mimeType: file.type || 'image/jpeg',
+                    base64,
                   },
                 ],
               }),
