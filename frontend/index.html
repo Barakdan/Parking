@@ -62,6 +62,18 @@
         cursor: not-allowed;
       }
 
+      .location-select {
+        display: block;
+        width: min(100%, 22rem);
+        margin: 1rem auto 0;
+        padding: 0.85rem 1rem;
+        border-radius: 1rem;
+        border: 1px solid #cbd5e1;
+        font-size: 1rem;
+        color: #0f172a;
+        background: #ffffff;
+      }
+
       .note {
         margin-top: 1rem;
         color: #64748b;
@@ -73,7 +85,13 @@
   <body>
     <main>
       <h1>Can I Park Here?</h1>
-      <p>Tap the button to share your location and check parking rules.</p>
+      <p>Use a Tel Aviv test location and send it to the backend.</p>
+      <label for="locationSelect" class="note">Select a Tel Aviv test location:</label>
+      <select id="locationSelect" class="location-select">
+        <option value="32.07501,34.77751">Dizengoff Square</option>
+        <option value="32.06649,34.77750">Rothschild Boulevard</option>
+        <option value="32.09019,34.77402">Tel Aviv Port</option>
+      </select>
       <button id="checkButton" class="button-link" type="button">
         Check Parking Here
       </button>
@@ -82,6 +100,7 @@
     <script type="module">
       const button = document.getElementById('checkButton');
       const status = document.getElementById('status');
+      const locationSelect = document.getElementById('locationSelect');
       const apiUrl = import.meta.env.VITE_API_URL;
 
       function setStatus(message, isError = false) {
@@ -89,9 +108,14 @@
         status.style.color = isError ? '#b91c1c' : '#64748b';
       }
 
+      function parseLocation(value) {
+        const [lat, lng] = value.split(',').map((v) => Number(v.trim()));
+        return { latitude: lat, longitude: lng };
+      }
+
       setStatus(
         apiUrl
-          ? 'Ready. Tap the button to share location.'
+          ? 'Ready. Tap the button to send a Tel Aviv test location.'
           : 'VITE_API_URL is not configured at build time. Check frontend Render env.',
         !apiUrl
       );
@@ -104,9 +128,9 @@
         }
 
         const payload = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          gpsAccuracyMeters: position.coords.accuracy,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          gpsAccuracyMeters: 10,
           isTelAvivResident: false,
           residentPermitZone: '',
           locationOnly: true,
@@ -140,22 +164,21 @@
       }
 
       button.addEventListener('click', () => {
-        if (!navigator.geolocation) {
-          setStatus('Geolocation is not available in this browser.', true);
+        if (!apiUrl) {
+          setStatus('VITE_API_URL is not configured at build time. Check frontend Render env.', true);
+          return;
+        }
+
+        const selected = locationSelect.value;
+        if (!selected) {
+          setStatus('Please select a test location.', true);
           return;
         }
 
         button.disabled = true;
-        setStatus('Requesting location…');
+        setStatus('Sending test location…');
 
-        navigator.geolocation.getCurrentPosition(
-          (position) => sendLocation(position),
-          (error) => {
-            setStatus(error.message || 'Location permission denied.', true);
-            button.disabled = false;
-          },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
+        sendLocation(parseLocation(selected));
       });
     </script>
   </body>
