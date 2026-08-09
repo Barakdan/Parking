@@ -75,7 +75,7 @@ function detectParkingPermission(text: string): boolean | null {
   return null;
 }
 
-function cleanGeminiJson(text: string): string {
+function cleanGoogleJson(text: string): string {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenceMatch) return fenceMatch[1].trim();
 
@@ -88,20 +88,36 @@ function cleanGeminiJson(text: string): string {
   return text.trim();
 }
 
-function extractTextFromGeminiResponse(response: any): string {
+function extractTextFromGoogleResponse(response: any): string {
   if (typeof response.output_text === "string" && response.output_text.trim()) {
     return response.output_text.trim();
   }
 
-  const outputs = Array.isArray(response.output) ? response.output : [];
-  for (const output of outputs) {
-    const content = Array.isArray(output.content) ? output.content : [];
-    for (const item of content) {
-      if (item?.type === "output_text" && typeof item.text === "string") {
-        return item.text.trim();
+  if (Array.isArray(response.predictions)) {
+    for (const prediction of response.predictions) {
+      if (Array.isArray(prediction.content)) {
+        for (const item of prediction.content) {
+          if (item?.type === "output_text" && typeof item.text === "string") {
+            return item.text.trim();
+          }
+          if (typeof item?.text === "string") {
+            return item.text.trim();
+          }
+        }
       }
-      if (typeof item?.text === "string") {
-        return item.text.trim();
+    }
+  }
+
+  if (Array.isArray(response.output)) {
+    for (const output of response.output) {
+      const content = Array.isArray(output.content) ? output.content : [];
+      for (const item of content) {
+        if (item?.type === "output_text" && typeof item.text === "string") {
+          return item.text.trim();
+        }
+        if (typeof item?.text === "string") {
+          return item.text.trim();
+        }
       }
     }
   }
@@ -109,61 +125,62 @@ function extractTextFromGeminiResponse(response: any): string {
   return "";
 }
 
-function buildGeminiNotes(parsedNotes: unknown): string[] {
+function buildGoogleNotes(parsedNotes: unknown): string[] {
   if (Array.isArray(parsedNotes)) {
     return parsedNotes.map((note) => String(note));
   }
   if (typeof parsedNotes === "string") {
     return [parsedNotes];
   }
-  return ["Parsed using Gemini image understanding."];
+  return ["Parsed using Google AI Studio image analysis."];
 }
 
-async function analyzeWithGemini(images: SignImage[]): Promise<ExtractedParkingSign> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL;
+async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingSign> {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const model = process.env.GOOGLE_MODEL;
   if (!apiKey || !model) {
-    throw new Error("GEMINI_API_KEY and GEMINI_MODEL are required for Gemini analysis.");
+    throw new Error("GOOGLE_API_KEY and GOOGLE_MODEL are required for Google AI analysis.");
   }
 
   const image = images[0];
-  const payload = {
-    model,
-    temperature: 0,
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: "Extract the full readable parking sign text from the attached image and return only valid JSON with keys: rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. Use null when a value cannot be determined.",
-          },
-          {
-            type: "input_image",
-            image_url: `data:${image.mimeType};base64,${image.base64}`,
-          },
-        ],
-      },
-    ],
-  };
+  const endpoint = new URL(`https://api.studio.google.com/v1/models/${encodeURIComponent(model)}:predict`);
+  endpoint.searchParams.set("key", apiKey);
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetch(endpoint.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      instances: [
+        {
+          content: [
+            {
+              type: "input_text",
+              text: "Extract the full readable parking sign text from the attached image and return only valid JSON with keys: rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. Use null when a value cannot be determined.",
+            },
+            {
+              type: "input_image",
+              image_bytes: image.base64,
+            },
+          ],
+        },
+      ],
+      parameters: {
+        temperature: 0,
+        maxOutputTokens: 1024,
+      },
+    }),
   });
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Gemini request failed: ${response.status} ${response.statusText} - ${body}`);
+    throw new Error(`Google AI request failed: ${response.status} ${response.statusText} - ${body}`);
   }
 
   const parsedResponse = await response.json();
-  const rawOutput = extractTextFromGeminiResponse(parsedResponse);
-  const jsonText = cleanGeminiJson(rawOutput);
+  const rawOutput = extractTextFromGoogleResponse(parsedResponse);
+  const jsonText = cleanGoogleJson(rawOutput);
 
   let parsed: any = null;
   try {
@@ -173,7 +190,7 @@ async function analyzeWithGemini(images: SignImage[]): Promise<ExtractedParkingS
   }
 
   const rawText = (parsed?.rawText ? String(parsed.rawText).trim() : rawOutput).trim();
-  const notes = buildGeminiNotes(parsed?.notes);
+  const notes = buildGoogleNotes(parsed?.notes);
 
   return {
     readable: rawText.length > 0,
@@ -193,5 +210,5 @@ export async function analyzeParkingSigns(
 ): Promise<ExtractedParkingSign | null> {
   if (images.length === 0) return null;
 
-  return analyzeWithGemini(images);
+  return analyzeWithGoogle(images);
 }
