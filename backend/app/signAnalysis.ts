@@ -89,6 +89,15 @@ function cleanGoogleJson(text: string): string {
 }
 
 function extractTextFromGoogleResponse(response: any): string {
+  if (Array.isArray(response.candidates)) {
+    for (const candidate of response.candidates) {
+      const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+      for (const part of parts) {
+        if (typeof part?.text === "string" && part.text.trim()) return part.text.trim();
+      }
+    }
+  }
+
   if (typeof response.output_text === "string" && response.output_text.trim()) {
     return response.output_text.trim();
   }
@@ -143,7 +152,15 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
   }
 
   const image = images[0];
-  const endpoint = new URL(`https://api.studio.google.com/v1/models/${encodeURIComponent(model)}:predict`);
+  if (!image || !image.base64) throw new Error("A sign image is required.");
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType)) {
+    throw new Error("The sign image must be JPEG, PNG, or WebP.");
+  }
+  if (image.base64.length > 8_000_000) {
+    throw new Error("The sign image is too large. Please upload a smaller photo.");
+  }
+
+  const endpoint = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`);
   endpoint.searchParams.set("key", apiKey);
 
   const response = await fetch(endpoint.toString(), {
@@ -152,23 +169,16 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      instances: [
-        {
-          content: [
-            {
-              type: "input_text",
-              text: "Extract the full readable parking sign text from the attached image and return only valid JSON with keys: rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. Use null when a value cannot be determined.",
-            },
-            {
-              type: "input_image",
-              image_bytes: image.base64,
-            },
-          ],
-        },
-      ],
-      parameters: {
+      contents: [{
+        parts: [
+          { text: "Extract the full readable parking sign text from the attached image and return only valid JSON with keys: rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. Use null when a value cannot be determined." },
+          { inlineData: { mimeType: image.mimeType, data: image.base64 } },
+        ],
+      }],
+      generationConfig: {
         temperature: 0,
         maxOutputTokens: 1024,
+        responseMimeType: "application/json",
       },
     }),
   });

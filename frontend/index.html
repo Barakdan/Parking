@@ -122,7 +122,41 @@
       );
 
       let photoRequired = false;
+      let requestInFlight = false;
       const photoInput = document.getElementById('photoInput');
+
+      async function readResponse(response) {
+        const text = await response.text();
+        if (!text) return {};
+        try {
+          return JSON.parse(text);
+        } catch {
+          throw new Error(`Backend returned an invalid response (${response.status}).`);
+        }
+      }
+
+      function prepareImage(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Could not read the selected photo.'));
+          reader.onload = () => {
+            const image = new Image();
+            image.onerror = () => reject(new Error('The selected file is not a readable image.'));
+            image.onload = () => {
+              const maxDimension = 1600;
+              const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, Math.round(image.width * scale));
+              canvas.height = Math.max(1, Math.round(image.height * scale));
+              canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+              resolve({ mimeType: 'image/jpeg', base64: dataUrl.split(',')[1] ?? '' });
+            };
+            image.src = String(reader.result);
+          };
+          reader.readAsDataURL(file);
+        });
+      }
 
       async function sendLocation(position) {
         if (!apiUrl) {
@@ -147,7 +181,7 @@
             body: JSON.stringify(payload),
           });
 
-          const data = await response.json();
+          const data = await readResponse(response);
           if (!response.ok) {
             setStatus(data.error || 'Parking check failed', true);
             return;
@@ -170,6 +204,7 @@
       }
 
       button.addEventListener('click', () => {
+        if (requestInFlight) return;
         if (!apiUrl) {
           setStatus('VITE_API_URL is not configured at build time. Check frontend Render env.', true);
           return;
@@ -187,12 +222,14 @@
         }
 
         button.disabled = true;
+        requestInFlight = true;
         setStatus('Sending test location…');
 
-        sendLocation(parseLocation(selected));
+        sendLocation(parseLocation(selected)).finally(() => { requestInFlight = false; });
       });
 
       photoInput.addEventListener('change', async () => {
+        if (requestInFlight) return;
         const file = photoInput.files?.[0];
         if (!file) {
           setStatus('No photo selected.', true);
@@ -204,15 +241,17 @@
           return;
         }
 
+        if (!file.type.startsWith('image/')) {
+          setStatus('Please select an image file.', true);
+          return;
+        }
+
+        requestInFlight = true;
         button.disabled = true;
         setStatus('Uploading signpost photo…');
 
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const imageData = reader.result;
-          const dataUrl = typeof imageData === 'string' ? imageData : '';
-          const base64 = dataUrl.split(',')[1] ?? '';
-          try {
+        try {
+            const preparedImage = await prepareImage(file);
             const response = await fetch(apiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -223,16 +262,11 @@
                 isTelAvivResident: false,
                 residentPermitZone: '',
                 locationOnly: false,
-                signImages: [
-                  {
-                    mimeType: file.type || 'image/jpeg',
-                    base64,
-                  },
-                ],
+                signImages: [preparedImage],
               }),
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
             if (!response.ok) {
               setStatus(data.error || 'Photo upload failed', true);
               photoRequired = true;
@@ -248,11 +282,10 @@
             photoRequired = true;
             button.textContent = 'Upload pic of signpost';
           } finally {
+            requestInFlight = false;
             button.disabled = false;
+            photoInput.value = '';
           }
-        };
-
-        reader.readAsDataURL(file);
       });
     </script>
   </body>
