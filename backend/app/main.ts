@@ -47,10 +47,13 @@ async function readJsonBody(request: IncomingMessage): Promise<ParkingCheckReque
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as ParkingCheckRequest;
 }
 
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()).filter(Boolean);
+
 function setCorsHeaders(request: IncomingMessage, response: ServerResponse): void {
   const origin = request.headers.origin;
-  if (origin && /^(http:\/\/localhost:5173|http:\/\/127\.0\.0\.1:5173|http:\/\/10\.10\.2\.3:5173)$/.test(origin)) {
+  if (origin && allowedOrigins.includes(origin)) {
     response.setHeader("access-control-allow-origin", origin);
+    response.setHeader("access-control-allow-credentials", "true");
   }
 
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");

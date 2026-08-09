@@ -77,12 +77,12 @@
       <button id="checkButton" class="button-link" type="button">
         Check Parking Here
       </button>
-      <p id="status" class="note">Backend must be running at http://localhost:3000</p>
+      <p id="status" class="note">Set VITE_API_URL in your Render env before building.</p>
     </main>
-    <script>
+    <script type="module">
       const button = document.getElementById('checkButton');
       const status = document.getElementById('status');
-      const apiUrl = 'http://localhost:3000/api/parking/check';
+      const apiUrl = import.meta.env.VITE_API_URL;
 
       function setStatus(message, isError = false) {
         status.textContent = message;
@@ -90,6 +90,12 @@
       }
 
       async function sendLocation(position) {
+        if (!apiUrl) {
+          setStatus('VITE_API_URL is not configured. Check your build settings.', true);
+          button.disabled = false;
+          return;
+        }
+
         const payload = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
