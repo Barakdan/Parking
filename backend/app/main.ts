@@ -97,7 +97,7 @@ const server = createServer(async (request, response) => {
     });
 
     if (!gis) {
-      sendJson(request, response, 404, { error: "No Tel Aviv parking zone found at this location." });
+      sendJson(request, response, 404, { error: "No supported parking zone found at this location." });
       return;
     }
 

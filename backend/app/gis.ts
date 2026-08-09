@@ -1,9 +1,23 @@
-const PARKING_ZONES_URL =
-  "https://gisn.tel-aviv.gov.il/arcgis/rest/services/" +
-  "IView2/MapServer/544/query";
+const DEFAULT_PARKING_ZONES_URLS = [
+  "https://gisn.tel-aviv.gov.il/arcgis/rest/services/IView2/MapServer/544/query",
+];
+
+const PARKING_ZONES_URLS = (process.env.PARKING_ZONES_URLS ?? DEFAULT_PARKING_ZONES_URLS.join(","))
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 
 const CENTRAL_TARIFF_ZONES = new Set([6, 7, 9, 10]);
 const CITYWIDE_TARIFF_ZONES = new Set([1, 2, 4, 12, 13]);
+
+async function fetchGisZoneData(url: string, params: URLSearchParams): Promise<ArcGisResponse> {
+  const response = await fetch(`${url}?${params}`);
+  if (!response.ok) {
+    throw new Error(`GIS query returned HTTP ${response.status} for ${url}.`);
+  }
+
+  return response.json() as Promise<ArcGisResponse>;
+}
 
 export interface LocationInput {
   latitude: number;
@@ -31,14 +45,18 @@ export interface GisParkingContext {
   };
 }
 
+interface ArcGisFeatureAttributes {
+  ms_ezor: number;
+  LABEL: string;
+  date_import: string;
+}
+
+interface ArcGisFeature {
+  attributes: ArcGisFeatureAttributes;
+}
+
 interface ArcGisResponse {
-  features?: Array<{
-    attributes: {
-      ms_ezor: number;
-      LABEL: string;
-      date_import: string;
-    };
-  }>;
+  features?: ArcGisFeature[];
   error?: {
     message?: string;
     details?: string[];
@@ -77,25 +95,37 @@ export async function getGisParkingContext(
     f: "json",
   });
 
-  const response = await fetch(`${PARKING_ZONES_URL}?${params}`);
+  let lastError: Error | null = null;
+  let resolvedAttributes: ArcGisFeatureAttributes | null = null;
 
-  if (!response.ok) {
-    throw new Error(`Tel Aviv GIS returned HTTP ${response.status}.`);
+  for (const url of PARKING_ZONES_URLS) {
+    try {
+      const data = await fetchGisZoneData(url, params);
+      if (data.error) {
+        const details = data.error.details?.join(", ");
+        throw new Error(
+          details
+            ? `${data.error.message ?? "GIS query failed"}: ${details}`
+            : data.error.message ?? "GIS query failed",
+        );
+      }
+
+      const attributes = data.features?.[0]?.attributes;
+      if (attributes) {
+        resolvedAttributes = attributes;
+        break;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
   }
 
-  const data = (await response.json()) as ArcGisResponse;
-
-  if (data.error) {
-    const details = data.error.details?.join(", ");
-    throw new Error(
-      details
-        ? `${data.error.message ?? "GIS query failed"}: ${details}`
-        : data.error.message ?? "GIS query failed",
-    );
+  if (!resolvedAttributes) {
+    if (lastError) throw lastError;
+    return null;
   }
 
-  const attributes = data.features?.[0]?.attributes;
-  if (!attributes) return null;
+  const attributes = resolvedAttributes;
 
   const zoneNumber = attributes.ms_ezor;
   const isCentral = CENTRAL_TARIFF_ZONES.has(zoneNumber);
@@ -136,7 +166,7 @@ export async function checkParkingLocation(input: ParkingCheckInput) {
   if (!gis) {
     return {
       ok: false,
-      error: "No Tel Aviv parking zone found at this location.",
+      error: "No supported parking zone found at this location.",
     };
   }
 
