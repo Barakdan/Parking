@@ -22,13 +22,26 @@ function sign(overrides: Partial<ExtractedParkingSign> = {}): ExtractedParkingSi
 
 test("rejects missing and non-sign images", () => {
   assert.match(getSignValidationFailure(null) ?? "", /No signpost/);
-  assert.match(getSignValidationFailure(sign({ isSignpost: false })) ?? "", /not recognized/);
+  assert.match(getSignValidationFailure(sign({
+    isSignpost: false,
+    readable: false,
+    extractionConfidence: 0,
+    parkingPermitted: null,
+    rawText: "",
+  })) ?? "", /enough parking-sign evidence/);
 });
 
 test("rejects unreadable, incomplete, and low-confidence signs", () => {
   assert.match(getSignValidationFailure(sign({ readable: false })) ?? "", /could not be read/);
   assert.match(getSignValidationFailure(sign({ allPanelsVisible: false })) ?? "", /complete signpost/);
-  assert.match(getSignValidationFailure(sign({ extractionConfidence: 0.69 })) ?? "", /too low/);
+  assert.match(getSignValidationFailure(sign({ extractionConfidence: 0.54 })) ?? "", /too low/);
+});
+
+test("accepts strong parking evidence when the classifier flag is wrong", () => {
+  assert.equal(getSignValidationFailure(sign({
+    isSignpost: false,
+    extractionConfidence: 0.6,
+  })), null);
 });
 
 test("rejects inconclusive rules and accepts validated signs", () => {

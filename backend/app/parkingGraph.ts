@@ -23,10 +23,17 @@ const ParkingState = Annotation.Root({
 
 export function getSignValidationFailure(sign: ExtractedParkingSign | null): string | null {
   if (!sign) return "No signpost image was provided.";
-  if (!sign.isSignpost) return "The submitted image was not recognized as a parking signpost.";
+  const hasParkingEvidence =
+    sign.rawText.trim().length >= 5 &&
+    (typeof sign.parkingPermitted === "boolean" ||
+      sign.residentPermitZones.length > 0 ||
+      (sign.restrictionStart !== null && sign.restrictionEnd !== null));
+  if (!sign.isSignpost && !hasParkingEvidence) {
+    return "The image did not contain enough parking-sign evidence for a verdict.";
+  }
   if (!sign.readable) return "The parking sign text could not be read reliably.";
   if (!sign.allPanelsVisible) return "The complete signpost is not visible in the submitted image.";
-  if (sign.extractionConfidence < 0.7) return "The sign extraction confidence is too low for a parking verdict.";
+  if (sign.extractionConfidence < 0.55) return "The sign extraction confidence is too low for a parking verdict.";
   if (sign.parkingPermitted === null) return "The sign's parking permission could not be determined.";
   return null;
 }

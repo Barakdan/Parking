@@ -202,18 +202,34 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
 
   const rawText = (parsed?.rawText ? String(parsed.rawText).trim() : rawOutput).trim();
   const notes = buildGoogleNotes(parsed?.notes);
-  const isSignpost = parsed?.isSignpost === true;
-  const extractionConfidence = Math.max(0, Math.min(1, Number(parsed?.extractionConfidence) || 0));
+  const parkingPermitted = parsed?.parkingPermitted ?? detectParkingPermission(rawText);
+  const residentPermitZones = parsed?.residentPermitZones ?? parseResidentZones(rawText);
+  const timeRange = parseTimeRange(rawText);
+  const restrictionStart = parsed?.restrictionStart ?? timeRange.start;
+  const restrictionEnd = parsed?.restrictionEnd ?? timeRange.end;
+  const hasStructuredParkingEvidence =
+    rawText.length >= 5 &&
+    (typeof parkingPermitted === "boolean" ||
+      residentPermitZones.length > 0 ||
+      (restrictionStart !== null && restrictionEnd !== null));
+  const isSignpost = parsed?.isSignpost === true || hasStructuredParkingEvidence;
+  const reportedConfidence = Math.max(0, Math.min(1, Number(parsed?.extractionConfidence) || 0));
+  const extractionConfidence = hasStructuredParkingEvidence
+    ? Math.max(0.6, reportedConfidence)
+    : reportedConfidence;
 
   return {
     isSignpost,
-    readable: isSignpost && parsed?.readable === true && rawText.length > 0,
-    allPanelsVisible: isSignpost && parsed?.allPanelsVisible === true,
+    readable: isSignpost && (parsed?.readable === true || hasStructuredParkingEvidence),
+    allPanelsVisible:
+      isSignpost &&
+      (parsed?.allPanelsVisible === true ||
+        (parsed?.isSignpost === false && hasStructuredParkingEvidence)),
     extractionConfidence,
-    parkingPermitted: parsed?.parkingPermitted ?? detectParkingPermission(rawText),
-    residentPermitZones: parsed?.residentPermitZones ?? parseResidentZones(rawText),
-    restrictionStart: parsed?.restrictionStart ?? parseTimeRange(rawText).start,
-    restrictionEnd: parsed?.restrictionEnd ?? parseTimeRange(rawText).end,
+    parkingPermitted,
+    residentPermitZones,
+    restrictionStart,
+    restrictionEnd,
     applicableWeekdays: parsed?.applicableWeekdays ?? parseWeekdays(rawText),
     rawText,
     notes,
