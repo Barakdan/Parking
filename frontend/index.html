@@ -104,6 +104,43 @@
         line-height: 1.55;
         white-space: pre-wrap;
       }
+
+      .verdict-details {
+        display: grid;
+        gap: 0.85rem;
+        text-align: left;
+      }
+
+      .verdict-section {
+        padding: 0.9rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        background: #ffffff;
+      }
+
+      .verdict-section-title {
+        display: block;
+        margin-bottom: 0.3rem;
+        color: #0f172a;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .verdict-rules {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .verdict-rules li + li {
+        margin-top: 0.4rem;
+      }
+
+      .sign-text {
+        direction: auto;
+        unicode-bidi: plaintext;
+      }
     </style>
   </head>
   <body>
@@ -121,7 +158,7 @@
         Check Parking Here
       </button>
       <input id="photoInput" type="file" accept="image/*" hidden />
-      <p id="status" class="note">Checking configuration…</p>
+      <div id="status" class="note">Checking configuration…</div>
     </main>
     <script type="module">
       import { gps as readPhotoGps } from 'exifr';
@@ -132,6 +169,7 @@
       const apiUrl = import.meta.env.VITE_API_URL;
 
       function setStatus(message, isError = false) {
+        status.classList.remove('verdict-details');
         status.textContent = message;
         status.style.color = isError ? '#b91c1c' : '#64748b';
       }
@@ -142,12 +180,12 @@
         button.textContent = text;
       }
 
-      function conciseExplanation(data) {
+      function verdictDetails(data) {
         const explanations = Array.isArray(data.explanation) ? data.explanation : [];
         const decisionReason = [...explanations].reverse().find((line) =>
           /prohibit|permit|allowed|requires|could not|not visible|not recognized|evidence/i.test(line)
         );
-        const parts = [];
+        const rules = [];
         const sign = data.signAnalysis;
 
         if (sign) {
@@ -185,50 +223,90 @@
           }
 
           if (ruleParts.length) {
-            parts.push(`The sign ${ruleParts.join(' ')}.`);
+            rules.push(`The sign ${ruleParts.join(' ')}.`);
           }
 
-          const transcribedText = String(sign.rawText || '').replace(/\s+/g, ' ').trim();
-          if (transcribedText) {
-            const shortenedText = transcribedText.length > 240
-              ? transcribedText.slice(0, 237) + '…'
-              : transcribedText;
-            parts.push(`Detected text: “${shortenedText}”`);
+          const transcribedLines = String(sign.rawText || '')
+            .split(/\n+/)
+            .map((line) => line.replace(/\s+/g, ' ').trim())
+            .filter(Boolean);
+          for (const line of transcribedLines.slice(0, 6)) {
+            rules.push(`Sign text: “${line.length > 180 ? line.slice(0, 177) + '…' : line}”`);
           }
         }
 
-        if (decisionReason) parts.push(decisionReason);
-        if (data.decision === 'allowed' && data.paymentAppMustBeActivated) {
-          parts.push('Activate a parking payment app now.');
-        } else if (data.decision === 'allowed') {
-          parts.push('No parking payment is required right now.');
-        }
-
-        if (data.confidence) {
-          parts.push(`Confidence: ${data.confidence.level} (${data.confidence.score}%).`);
-        }
+        if (decisionReason) rules.push(decisionReason);
 
         if (data.decision !== 'uncertain' && data.warnings?.length > 1) {
-          parts.push(data.warnings.at(-1));
+          rules.push(data.warnings.at(-1));
         }
 
-        return parts.join(' ');
+        const payment = data.decision === 'prohibited'
+          ? 'Do not activate payment because parking is not permitted for this vehicle.'
+          : data.paymentAppMustBeActivated
+            ? 'Activate a parking payment app now.'
+            : data.decision === 'allowed'
+              ? 'No parking payment is required right now.'
+              : 'Payment cannot be determined until the sign is verified.';
+
+        return {
+          confidence: data.confidence
+            ? `${data.confidence.level[0].toUpperCase() + data.confidence.level.slice(1)} · ${data.confidence.score}% — ${data.confidence.reason}`
+            : 'Not available',
+          payment,
+          rules: rules.length ? rules : ['The sign could not be interpreted safely.'],
+        };
+      }
+
+      function showVerdictDetails(data, isError) {
+        const details = verdictDetails(data);
+        status.replaceChildren();
+        status.classList.add('verdict-details');
+        status.style.color = isError ? '#991b1b' : '#334155';
+
+        const addSection = (title, content) => {
+          const section = document.createElement('section');
+          section.className = 'verdict-section';
+          const heading = document.createElement('strong');
+          heading.className = 'verdict-section-title';
+          heading.textContent = title;
+          section.append(heading, content);
+          status.append(section);
+        };
+
+        const confidence = document.createElement('span');
+        confidence.textContent = details.confidence;
+        addSection('Confidence', confidence);
+
+        const payment = document.createElement('span');
+        payment.textContent = details.payment;
+        addSection('Payment', payment);
+
+        const rules = document.createElement('ul');
+        rules.className = 'verdict-rules';
+        for (const rule of details.rules) {
+          const item = document.createElement('li');
+          item.textContent = rule;
+          if (rule.startsWith('Sign text:')) item.className = 'sign-text';
+          rules.append(item);
+        }
+        addSection('Rules', rules);
       }
 
       function showVerdict(data) {
         if (data.decision === 'allowed') {
           setButtonState('allowed', 'YES\nParking Allowed');
-          setStatus(conciseExplanation(data), false);
+          showVerdictDetails(data, false);
           return;
         }
         if (data.decision === 'prohibited') {
           setButtonState('prohibited', 'NO\nDo Not Park');
-          setStatus(conciseExplanation(data), true);
+          showVerdictDetails(data, true);
           return;
         }
 
         setButtonState('uncertain', 'NOT SURE\nTry Another Photo');
-        setStatus(conciseExplanation(data) || 'The sign could not be interpreted safely.', true);
+        showVerdictDetails(data, true);
       }
 
       function parseLocation(value) {
