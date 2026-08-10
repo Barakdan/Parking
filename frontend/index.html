@@ -95,7 +95,7 @@
       <button id="checkButton" class="button-link" type="button">
         Check Parking Here
       </button>
-      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden />
+      <input id="photoInput" type="file" accept="image/*" hidden />
       <p id="status" class="note">Checking configuration…</p>
     </main>
     <script type="module">
@@ -191,8 +191,8 @@
             setStatus('Cached sign found: ' + (data.message ?? 'parking evaluation returned'), false);
           } else if (data.needsPhoto) {
             photoRequired = true;
-            button.textContent = 'Upload pic of signpost';
-            setStatus('Photo required. Tap the button to upload a signpost photo.', false);
+            button.textContent = 'Choose signpost photo';
+            setStatus('Photo required. Take a new photo or choose an existing signpost photo.', false);
           } else {
             setStatus('Parking result: ' + JSON.stringify(data), false);
           }
@@ -270,17 +270,26 @@
             if (!response.ok) {
               setStatus(data.error || 'Photo upload failed', true);
               photoRequired = true;
-              button.textContent = 'Upload pic of signpost';
+              button.textContent = 'Choose signpost photo';
               return;
             }
 
-            setStatus('Parking result: ' + JSON.stringify(data), false);
-            photoRequired = false;
-            button.textContent = 'Check Parking Here';
+            if (data.needsPhoto || data.decision === 'uncertain') {
+              setStatus(
+                data.explanation?.at(-1) || 'The photo could not be verified. Please upload a clear photo of the complete signpost.',
+                true
+              );
+              photoRequired = true;
+              button.textContent = 'Choose another signpost photo';
+            } else {
+              setStatus('Parking result: ' + JSON.stringify(data), false);
+              photoRequired = false;
+              button.textContent = 'Check Parking Here';
+            }
           } catch (error) {
             setStatus(error instanceof Error ? error.message : 'Unable to reach backend', true);
             photoRequired = true;
-            button.textContent = 'Upload pic of signpost';
+            button.textContent = 'Choose signpost photo';
           } finally {
             requestInFlight = false;
             button.disabled = false;

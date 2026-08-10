@@ -1,6 +1,8 @@
 export interface ExtractedParkingSign {
+  isSignpost: boolean;
   readable: boolean;
   allPanelsVisible: boolean;
+  extractionConfidence: number;
   parkingPermitted: boolean | null;
   residentPermitZones: number[];
   restrictionStart: string | null;
@@ -145,10 +147,10 @@ function buildGoogleNotes(parsedNotes: unknown): string[] {
 }
 
 async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingSign> {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  const model = process.env.GOOGLE_MODEL;
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  const model = process.env.GEMINI_MODEL ?? process.env.GOOGLE_MODEL;
   if (!apiKey || !model) {
-    throw new Error("GOOGLE_API_KEY and GOOGLE_MODEL are required for Google AI analysis.");
+    throw new Error("GEMINI_API_KEY and GEMINI_MODEL are required for Gemini analysis.");
   }
 
   const image = images[0];
@@ -171,12 +173,11 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     body: JSON.stringify({
       contents: [{
         parts: [
-          { text: "Extract the full readable parking sign text from the attached image and return only valid JSON with keys: rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. Use null when a value cannot be determined." },
+          { text: "First determine whether the image clearly shows a parking signpost. Never infer parking rules from a street scene, vehicle, curb, or unrelated image. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. Use null for rules that cannot be determined. If this is not a parking signpost, set isSignpost, readable, and allPanelsVisible to false, extractionConfidence to 0, rawText to an empty string, and all rule fields to null or empty arrays." },
           { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         ],
       }],
       generationConfig: {
-        temperature: 0,
         maxOutputTokens: 1024,
         responseMimeType: "application/json",
       },
@@ -201,10 +202,14 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
 
   const rawText = (parsed?.rawText ? String(parsed.rawText).trim() : rawOutput).trim();
   const notes = buildGoogleNotes(parsed?.notes);
+  const isSignpost = parsed?.isSignpost === true;
+  const extractionConfidence = Math.max(0, Math.min(1, Number(parsed?.extractionConfidence) || 0));
 
   return {
-    readable: rawText.length > 0,
-    allPanelsVisible: rawText.length > 20,
+    isSignpost,
+    readable: isSignpost && parsed?.readable === true && rawText.length > 0,
+    allPanelsVisible: isSignpost && parsed?.allPanelsVisible === true,
+    extractionConfidence,
     parkingPermitted: parsed?.parkingPermitted ?? detectParkingPermission(rawText),
     residentPermitZones: parsed?.residentPermitZones ?? parseResidentZones(rawText),
     restrictionStart: parsed?.restrictionStart ?? parseTimeRange(rawText).start,

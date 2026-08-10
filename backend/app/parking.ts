@@ -14,6 +14,7 @@ export interface ParkingEvaluationInput {
   driver: DriverContext;
   sign: ExtractedParkingSign | null;
   checkedAt?: Date;
+  validationFailure?: string;
 }
 
 export interface ParkingEvaluation {
@@ -129,21 +130,35 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
   ];
   const warnings = ["Signs and curb markings at the location take precedence."];
 
-  if (!input.sign) {
-    explanation.push(
-      paymentRequiredNow
-        ? "Parking appears allowed, but a parking application must be activated."
-        : "Parking appears allowed without payment at the current time.",
-      "Submit a clear photo of the complete signpost for a street-specific decision.",
-    );
+  if (!input.sign || input.validationFailure) {
+    explanation.push(input.validationFailure ?? "A verified signpost photo is required for a parking verdict.");
 
     return {
-      decision: "allowed",
-      canPark: true,
+      decision: "uncertain",
+      canPark: null,
       confidence: {
-        level: "medium",
-        score: 65,
-        reason: "Official zone and payment rules are known, but the street sign was not checked.",
+        level: "low",
+        score: 0,
+        reason: "The sign evidence did not pass validation, so no parking verdict was produced.",
+      },
+      zone: input.gis.zone,
+      paymentRequiredNow,
+      paymentAppMustBeActivated: paymentRequiredNow,
+      explanation,
+      assumptions,
+      warnings,
+    };
+  }
+
+  if (input.sign.parkingPermitted === null) {
+    explanation.push("The sign was detected, but its parking rule could not be determined.");
+    return {
+      decision: "uncertain",
+      canPark: null,
+      confidence: {
+        level: "low",
+        score: Math.round(input.sign.extractionConfidence * 50),
+        reason: "The extracted sign did not contain a conclusive parking permission rule.",
       },
       zone: input.gis.zone,
       paymentRequiredNow,
@@ -200,7 +215,7 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     canPark: !prohibited,
     confidence: {
       level: "high",
-      score: 90,
+      score: Math.round(70 + input.sign.extractionConfidence * 20),
       reason: "Official GIS context and a readable, complete signpost agree.",
     },
     zone: input.gis.zone,

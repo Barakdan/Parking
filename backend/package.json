@@ -2,12 +2,20 @@
   "name": "can-i-park-here-backend",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
   "scripts": {
     "dev": "tsx app/main.ts",
     "build": "tsc",
+    "test": "tsx --test app/**/*.test.ts",
     "start": "node dist/app/main.js"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@langchain/core": "^1.2.5",
+    "@langchain/langgraph": "^1.4.9"
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",

@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getGisParkingContext, type LocationInput } from "./gis.js";
-import { evaluateParking, type DriverContext } from "./parking.js";
-import { analyzeParkingSigns, type ExtractedParkingSign, type SignImage } from "./signAnalysis.js";
+import type { DriverContext } from "./parking.js";
+import { runParkingWorkflow } from "./parkingGraph.js";
+import type { ExtractedParkingSign, SignImage } from "./signAnalysis.js";
 
 interface ParkingCheckRequest extends LocationInput, DriverContext {
   checkedAt?: string;
@@ -104,7 +105,7 @@ const server = createServer(async (request, response) => {
     if (body.locationOnly) {
       const cached = findCachedSign(body);
       if (cached) {
-        const result = evaluateParking({
+        const { result } = await runParkingWorkflow({
           gis,
           sign: cached.sign,
           checkedAt,
@@ -122,8 +123,16 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const sign = await analyzeParkingSigns(body.signImages ?? []);
-    if (sign) {
+    const { sign, result, validationFailure } = await runParkingWorkflow({
+      gis,
+      images: body.signImages ?? [],
+      checkedAt,
+      driver: {
+        isTelAvivResident: body.isTelAvivResident,
+        residentPermitZone: body.residentPermitZone,
+      },
+    });
+    if (sign && !validationFailure) {
       cachedSigns.push({
         latitude: body.latitude,
         longitude: body.longitude,
@@ -133,17 +142,11 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const result = evaluateParking({
-      gis,
-      sign,
-      checkedAt,
-      driver: {
-        isTelAvivResident: body.isTelAvivResident,
-        residentPermitZone: body.residentPermitZone,
-      },
+    sendJson(request, response, 200, {
+      ...result,
+      cacheHit: false,
+      needsPhoto: result.decision === "uncertain",
     });
-
-    sendJson(request, response, 200, { ...result, cacheHit: false });
   } catch (error) {
     sendJson(request, response, 400, {
       error: error instanceof Error ? error.message : "Parking check failed.",
