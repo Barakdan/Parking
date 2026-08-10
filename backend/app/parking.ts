@@ -7,6 +7,8 @@ export type ConfidenceLevel = "low" | "medium" | "high";
 export interface DriverContext {
   isTelAvivResident: boolean;
   residentPermitZone?: number;
+  hasDisabledParkingPermit?: boolean;
+  isActivelyLoading?: boolean;
 }
 
 export interface ParkingEvaluationInput {
@@ -104,7 +106,10 @@ function signRestrictionIsActive(
   sign: ExtractedParkingSign,
   time: JerusalemTime,
 ): boolean {
-  if (!sign.applicableWeekdays.includes(time.weekdayNumber)) return false;
+  if (
+    sign.applicableWeekdays.length > 0 &&
+    !sign.applicableWeekdays.includes(time.weekdayNumber)
+  ) return false;
   if (!sign.restrictionStart || !sign.restrictionEnd) return true;
 
   return isInsideRange(
@@ -122,6 +127,9 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     input.driver.residentPermitZone === input.gis.zone.number;
   const paymentHoursActive = standardPaymentIsActive(input.gis, time);
   const paymentRequiredNow = paymentHoursActive && !permitMatches;
+  const qualifiesForSpecialUse =
+    (input.sign?.loadingOnly === true && input.driver.isActivelyLoading === true) ||
+    (input.sign?.disabledPermitRequired === true && input.driver.hasDisabledParkingPermit === true);
 
   const explanation = [`The location is inside ${input.gis.zone.label}.`];
   const assumptions = [
@@ -150,7 +158,7 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     };
   }
 
-  if (input.sign.parkingPermitted === null) {
+  if (input.sign.parkingPermitted === null && input.sign.generalParkingAllowed === null) {
     explanation.push("The sign was detected, but its parking rule could not be determined.");
     return {
       decision: "uncertain",
@@ -201,16 +209,29 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
 
   const prohibited =
     restrictionActive &&
-    (input.sign.parkingPermitted === false || !permitAllowed);
+    (input.sign.parkingPermitted === false ||
+      (input.sign.generalParkingAllowed === false && !qualifiesForSpecialUse) ||
+      (input.sign.loadingOnly && input.driver.isActivelyLoading !== true) ||
+      (input.sign.disabledPermitRequired && input.driver.hasDisabledParkingPermit !== true) ||
+      !permitAllowed);
 
   explanation.push(`Sign text: ${input.sign.rawText}`);
 
   if (prohibited) {
-    explanation.push(
-      permitAllowed
-        ? "The photographed sign prohibits parking at the current time."
-        : "The photographed sign requires a resident permit that does not match this vehicle.",
-    );
+    if (input.sign.loadingOnly) {
+      explanation.push("This area is reserved for active loading and unloading, not ordinary parking.");
+    } else if (input.sign.disabledPermitRequired) {
+      const count = input.sign.reservedDisabledSpaces;
+      explanation.push(count
+        ? `The sign reserves ${count} space${count === 1 ? "" : "s"} for vehicles with a disabled parking permit.`
+        : "The space is reserved for vehicles with a disabled parking permit.");
+    } else {
+      explanation.push(
+        permitAllowed
+          ? "The photographed sign prohibits ordinary parking at the current time."
+          : "The photographed sign requires a resident permit that does not match this vehicle.",
+      );
+    }
   } else {
     explanation.push("The photographed sign does not prohibit this vehicle at the current time.");
   }

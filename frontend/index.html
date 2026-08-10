@@ -149,7 +149,20 @@
 
         if (sign) {
           const ruleParts = [];
-          if (sign.parkingPermitted === true) ruleParts.push('allows parking');
+          if (sign.loadingOnly) {
+            ruleParts.push('allows stopping only for active loading and unloading');
+          } else if (sign.disabledPermitRequired) {
+            const spaceCount = sign.reservedDisabledSpaces
+              ? ` for ${sign.reservedDisabledSpaces} space${sign.reservedDisabledSpaces === 1 ? '' : 's'}`
+              : '';
+            ruleParts.push(`reserves parking for disabled-permit vehicles${spaceCount}`);
+          } else if (sign.generalParkingAllowed === true) {
+            ruleParts.push('allows ordinary parking');
+          } else if (sign.generalParkingAllowed === false) {
+            ruleParts.push('does not allow ordinary parking');
+          } else if (sign.parkingPermitted === true) {
+            ruleParts.push('allows parking with conditions');
+          }
           if (sign.parkingPermitted === false) ruleParts.push('prohibits parking');
 
           if (sign.residentPermitZones?.length) {
@@ -275,6 +288,8 @@
           gpsAccuracyMeters: 10,
           isTelAvivResident: false,
           residentPermitZone: '',
+          hasDisabledParkingPermit: false,
+          isActivelyLoading: false,
           locationOnly: true,
         };
 
@@ -367,6 +382,8 @@
                 gpsAccuracyMeters: 10,
                 isTelAvivResident: false,
                 residentPermitZone: '',
+                hasDisabledParkingPermit: false,
+                isActivelyLoading: false,
                 locationOnly: false,
                 signImages: [preparedImage],
               }),

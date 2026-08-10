@@ -10,6 +10,10 @@ function sign(overrides: Partial<ExtractedParkingSign> = {}): ExtractedParkingSi
     allPanelsVisible: true,
     extractionConfidence: 0.95,
     parkingPermitted: true,
+    generalParkingAllowed: true,
+    loadingOnly: false,
+    disabledPermitRequired: false,
+    reservedDisabledSpaces: null,
     residentPermitZones: [],
     restrictionStart: null,
     restrictionEnd: null,
@@ -48,6 +52,9 @@ test("accepts strong parking evidence when the classifier flag is wrong", () => 
 });
 
 test("rejects inconclusive rules and accepts validated signs", () => {
-  assert.match(getSignValidationFailure(sign({ parkingPermitted: null })) ?? "", /could not be determined/);
+  assert.match(getSignValidationFailure(sign({
+    parkingPermitted: null,
+    generalParkingAllowed: null,
+  })) ?? "", /could not be determined/);
   assert.equal(getSignValidationFailure(sign()), null);
 });

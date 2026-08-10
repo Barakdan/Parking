@@ -26,6 +26,7 @@ export function getSignValidationFailure(sign: ExtractedParkingSign | null): str
   const hasParkingEvidence =
     sign.rawText.trim().length >= 5 &&
     (typeof sign.parkingPermitted === "boolean" ||
+      typeof sign.generalParkingAllowed === "boolean" ||
       sign.residentPermitZones.length > 0 ||
       (sign.restrictionStart !== null && sign.restrictionEnd !== null));
   const hasReadableSignText = sign.readable && sign.rawText.trim().length >= 4;
@@ -34,7 +35,9 @@ export function getSignValidationFailure(sign: ExtractedParkingSign | null): str
   }
   if (!sign.readable) return "The parking sign text could not be read reliably.";
   if (sign.extractionConfidence < 0.55) return "The sign extraction confidence is too low for a parking verdict.";
-  if (sign.parkingPermitted === null) return "The sign's parking permission could not be determined.";
+  if (sign.parkingPermitted === null && sign.generalParkingAllowed === null) {
+    return "The sign's parking permission could not be determined.";
+  }
   return null;
 }
 

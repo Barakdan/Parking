@@ -112,6 +112,8 @@ const server = createServer(async (request, response) => {
           driver: {
             isTelAvivResident: body.isTelAvivResident,
             residentPermitZone: body.residentPermitZone,
+            hasDisabledParkingPermit: body.hasDisabledParkingPermit ?? false,
+            isActivelyLoading: body.isActivelyLoading ?? false,
           },
         });
 
@@ -134,6 +136,8 @@ const server = createServer(async (request, response) => {
       driver: {
         isTelAvivResident: body.isTelAvivResident,
         residentPermitZone: body.residentPermitZone,
+        hasDisabledParkingPermit: body.hasDisabledParkingPermit ?? false,
+        isActivelyLoading: body.isActivelyLoading ?? false,
       },
     });
     if (sign && !validationFailure) {
