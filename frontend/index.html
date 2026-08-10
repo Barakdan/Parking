@@ -48,6 +48,7 @@
         border: none;
         cursor: pointer;
         text-align: center;
+        white-space: pre-line;
         padding: 0;
       }
 
@@ -55,6 +56,27 @@
       .button-link:focus-visible {
         background: #111827;
         outline: none;
+      }
+
+      .button-link.verdict-allowed,
+      .button-link.verdict-allowed:hover,
+      .button-link.verdict-allowed:focus-visible {
+        background: #15803d;
+        box-shadow: 0 1.25rem 3rem rgb(21 128 61 / 24%);
+      }
+
+      .button-link.verdict-prohibited,
+      .button-link.verdict-prohibited:hover,
+      .button-link.verdict-prohibited:focus-visible {
+        background: #b91c1c;
+        box-shadow: 0 1.25rem 3rem rgb(185 28 28 / 24%);
+      }
+
+      .button-link.verdict-uncertain,
+      .button-link.verdict-uncertain:hover,
+      .button-link.verdict-uncertain:focus-visible {
+        background: #b45309;
+        box-shadow: 0 1.25rem 3rem rgb(180 83 9 / 24%);
       }
 
       .button-link:disabled {
@@ -75,9 +97,11 @@
       }
 
       .note {
-        margin-top: 1rem;
+        max-width: 34rem;
+        margin: 1.25rem auto 0;
         color: #64748b;
-        font-size: 0.95rem;
+        font-size: 1rem;
+        line-height: 1.55;
         white-space: pre-wrap;
       }
     </style>
@@ -107,6 +131,53 @@
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.style.color = isError ? '#b91c1c' : '#64748b';
+      }
+
+      function setButtonState(state, text) {
+        button.classList.remove('verdict-allowed', 'verdict-prohibited', 'verdict-uncertain');
+        if (state) button.classList.add(`verdict-${state}`);
+        button.textContent = text;
+      }
+
+      function conciseExplanation(data) {
+        const explanations = Array.isArray(data.explanation) ? data.explanation : [];
+        const decisionReason = [...explanations].reverse().find((line) =>
+          /prohibit|permit|allowed|requires|could not|not visible|not recognized|evidence/i.test(line)
+        );
+        const parts = [];
+
+        if (decisionReason) parts.push(decisionReason);
+        if (data.decision === 'allowed' && data.paymentAppMustBeActivated) {
+          parts.push('Activate a parking payment app now.');
+        } else if (data.decision === 'allowed') {
+          parts.push('No parking payment is required right now.');
+        }
+
+        if (data.confidence) {
+          parts.push(`Confidence: ${data.confidence.level} (${data.confidence.score}%).`);
+        }
+
+        if (data.decision !== 'uncertain' && data.warnings?.length > 1) {
+          parts.push(data.warnings.at(-1));
+        }
+
+        return parts.join(' ');
+      }
+
+      function showVerdict(data) {
+        if (data.decision === 'allowed') {
+          setButtonState('allowed', 'YES\nParking Allowed');
+          setStatus(conciseExplanation(data), false);
+          return;
+        }
+        if (data.decision === 'prohibited') {
+          setButtonState('prohibited', 'NO\nDo Not Park');
+          setStatus(conciseExplanation(data), true);
+          return;
+        }
+
+        setButtonState('uncertain', 'NOT SURE\nTry Another Photo');
+        setStatus(conciseExplanation(data) || 'The sign could not be interpreted safely.', true);
       }
 
       function parseLocation(value) {
@@ -188,13 +259,13 @@
           }
 
           if (data.cacheHit) {
-            setStatus('Cached sign found: ' + (data.message ?? 'parking evaluation returned'), false);
+            showVerdict(data);
           } else if (data.needsPhoto) {
             photoRequired = true;
-            button.textContent = 'Choose signpost photo';
+            setButtonState(null, 'Choose signpost photo');
             setStatus('Photo required. Take a new photo or choose an existing signpost photo.', false);
           } else {
-            setStatus('Parking result: ' + JSON.stringify(data), false);
+            showVerdict(data);
           }
         } catch (error) {
           setStatus(error instanceof Error ? error.message : 'Unable to reach backend', true);
@@ -223,6 +294,7 @@
 
         button.disabled = true;
         requestInFlight = true;
+        setButtonState(null, 'Checking…');
         setStatus('Sending test location…');
 
         sendLocation(parseLocation(selected)).finally(() => { requestInFlight = false; });
@@ -248,6 +320,7 @@
 
         requestInFlight = true;
         button.disabled = true;
+        setButtonState(null, 'Analyzing…');
         setStatus('Uploading signpost photo…');
 
         try {
@@ -267,32 +340,24 @@
             });
 
             const data = await readResponse(response);
-            const geminiDetails = data.signAnalysis
-              ? '\n\nGemini sign analysis:\n' + JSON.stringify(data.signAnalysis, null, 2)
-              : '';
             if (!response.ok) {
-              setStatus((data.error || 'Photo upload failed') + geminiDetails, true);
+              setStatus(data.error || 'Photo upload failed', true);
               photoRequired = true;
-              button.textContent = 'Choose signpost photo';
+              setButtonState(null, 'Choose signpost photo');
               return;
             }
 
             if (data.needsPhoto || data.decision === 'uncertain') {
-              setStatus(
-                (data.explanation?.at(-1) || 'The photo could not be verified. Please upload a clear photo of the complete signpost.') + geminiDetails,
-                true
-              );
               photoRequired = true;
-              button.textContent = 'Choose another signpost photo';
+              showVerdict(data);
             } else {
-              setStatus('Parking result: ' + JSON.stringify(data) + geminiDetails, false);
               photoRequired = false;
-              button.textContent = 'Check Parking Here';
+              showVerdict(data);
             }
           } catch (error) {
             setStatus(error instanceof Error ? error.message : 'Unable to reach backend', true);
             photoRequired = true;
-            button.textContent = 'Choose signpost photo';
+            setButtonState(null, 'Choose signpost photo');
           } finally {
             requestInFlight = false;
             button.disabled = false;
