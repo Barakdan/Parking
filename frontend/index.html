@@ -191,7 +191,11 @@
         if (sign) {
           const ruleParts = [];
           if (sign.loadingOnly) {
-            ruleParts.push('allows stopping only for active loading and unloading');
+            ruleParts.push(sign.commercialVehicleRequired
+              ? `allows stopping only for ${(sign.allowedVehicleClasses?.length
+                  ? sign.allowedVehicleClasses.join(', ').replace(/, ([^,]+)$/, ', or $1')
+                  : 'eligible commercial')} vehicles actively loading or unloading`
+              : 'allows stopping only for active loading and unloading');
           } else if (sign.disabledPermitRequired) {
             const reservedArea = sign.disabledSpaceDescription || (sign.reservedDisabledSpaces
               ? `${sign.reservedDisabledSpaces} marked space${sign.reservedDisabledSpaces === 1 ? '' : 's'}`
@@ -418,6 +422,7 @@
           residentPermitZone: '',
           hasDisabledParkingPermit: false,
           isActivelyLoading: false,
+          isCommercialVehicle: false,
           locationOnly: true,
         };
 
@@ -538,6 +543,7 @@
                 residentPermitZone: '',
                 hasDisabledParkingPermit: false,
                 isActivelyLoading: false,
+                isCommercialVehicle: false,
                 locationOnly: false,
                 signImages: [preparedImage],
               }),

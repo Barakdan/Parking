@@ -115,6 +115,7 @@ const server = createServer(async (request, response) => {
             residentPermitZone: body.residentPermitZone,
             hasDisabledParkingPermit: body.hasDisabledParkingPermit ?? false,
             isActivelyLoading: body.isActivelyLoading ?? false,
+            isCommercialVehicle: body.isCommercialVehicle ?? false,
           },
         });
 
@@ -140,6 +141,7 @@ const server = createServer(async (request, response) => {
         residentPermitZone: body.residentPermitZone,
         hasDisabledParkingPermit: body.hasDisabledParkingPermit ?? false,
         isActivelyLoading: body.isActivelyLoading ?? false,
+        isCommercialVehicle: body.isCommercialVehicle ?? false,
       },
     });
     if (sign && !validationFailure && photoLocationValidation.verified) {

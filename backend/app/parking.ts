@@ -9,6 +9,7 @@ export interface DriverContext {
   residentPermitZone?: number;
   hasDisabledParkingPermit?: boolean;
   isActivelyLoading?: boolean;
+  isCommercialVehicle?: boolean;
 }
 
 export interface ParkingEvaluationInput {
@@ -132,7 +133,9 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     input.sign.reservedDisabledSpaces !== null &&
     input.sign.reservedDisabledSpaces > 0;
   const qualifiesForSpecialUse =
-    (input.sign?.loadingOnly === true && input.driver.isActivelyLoading === true) ||
+    (input.sign?.loadingOnly === true &&
+      input.driver.isActivelyLoading === true &&
+      (input.sign.commercialVehicleRequired !== true || input.driver.isCommercialVehicle === true)) ||
     (input.sign?.disabledPermitRequired === true && input.driver.hasDisabledParkingPermit === true);
 
   const explanation = [`The location is inside ${input.gis.zone.label}.`];
@@ -216,6 +219,7 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     (input.sign.parkingPermitted === false ||
       (input.sign.generalParkingAllowed === false && !qualifiesForSpecialUse) ||
       (input.sign.loadingOnly && input.driver.isActivelyLoading !== true) ||
+      (input.sign.commercialVehicleRequired && input.driver.isCommercialVehicle !== true) ||
       (input.sign.disabledPermitRequired &&
         !hasLimitedDisabledSubset &&
         input.driver.hasDisabledParkingPermit !== true) ||
@@ -231,8 +235,15 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
   }
 
   if (prohibited) {
-    if (input.sign.loadingOnly) {
-      explanation.push("This area is reserved for active loading and unloading, not ordinary parking.");
+    if (input.sign.loadingOnly || input.sign.commercialVehicleRequired) {
+      const vehicleClasses = input.sign.allowedVehicleClasses.length > 0
+        ? input.sign.allowedVehicleClasses.length === 1
+          ? input.sign.allowedVehicleClasses[0]
+          : `${input.sign.allowedVehicleClasses.slice(0, -1).join(", ")}, or ${input.sign.allowedVehicleClasses.at(-1)}`
+        : "eligible commercial";
+      explanation.push(input.sign.commercialVehicleRequired
+        ? `This area is reserved for ${vehicleClasses} vehicles actively loading or unloading; a regular private car may not park here.`
+        : "This area is reserved for active loading and unloading, not ordinary parking.");
     } else if (input.sign.disabledPermitRequired) {
       const count = input.sign.reservedDisabledSpaces;
       explanation.push(count

@@ -23,6 +23,8 @@ function specialSign(overrides: Partial<ExtractedParkingSign>): ExtractedParking
     parkingPermitted: true,
     generalParkingAllowed: false,
     loadingOnly: false,
+    commercialVehicleRequired: false,
+    allowedVehicleClasses: [],
     disabledPermitRequired: false,
     reservedDisabledSpaces: null,
     disabledSpaceDescription: null,
@@ -45,6 +47,21 @@ test("ordinary parking is prohibited in loading-only areas", () => {
   });
   assert.equal(result.decision, "prohibited");
   assert.match(result.explanation.at(-1) ?? "", /loading and unloading/);
+});
+
+test("a private car cannot use a commercial loading zone", () => {
+  const result = evaluateParking({
+    gis,
+    driver: { isTelAvivResident: false, isActivelyLoading: true, isCommercialVehicle: false },
+    sign: specialSign({
+      loadingOnly: true,
+      commercialVehicleRequired: true,
+      allowedVehicleClasses: ["freight", "commercial", "unified"],
+    }),
+    checkedAt: new Date("2026-08-10T10:00:00Z"),
+  });
+  assert.equal(result.decision, "prohibited");
+  assert.match(result.explanation.at(-1) ?? "", /freight, commercial, or unified vehicles/);
 });
 
 test("limited disabled spaces do not prohibit the remaining ordinary spaces", () => {
