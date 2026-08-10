@@ -169,8 +169,8 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     };
   }
 
-  if (!input.sign.readable || !input.sign.allPanelsVisible) {
-    explanation.push("The submitted sign image is unreadable or does not show every sign panel.");
+  if (!input.sign.readable) {
+    explanation.push("The submitted sign image is unreadable.");
     return {
       decision: "uncertain",
       canPark: null,
@@ -186,6 +186,11 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
       assumptions,
       warnings,
     };
+  }
+
+  if (!input.sign.allPanelsVisible) {
+    warnings.push("The complete signpost may not be visible; an unseen panel could change this result.");
+    assumptions.push("The visible sign contains the rule that applies to this parking space.");
   }
 
   const restrictionActive = signRestrictionIsActive(input.sign, time);
@@ -210,13 +215,19 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     explanation.push("The photographed sign does not prohibit this vehicle at the current time.");
   }
 
+  const completeSignpost = input.sign.allPanelsVisible;
+
   return {
     decision: prohibited ? "prohibited" : "allowed",
     canPark: !prohibited,
     confidence: {
-      level: "high",
-      score: Math.round(70 + input.sign.extractionConfidence * 20),
-      reason: "Official GIS context and a readable, complete signpost agree.",
+      level: completeSignpost ? "high" : "medium",
+      score: completeSignpost
+        ? Math.round(70 + input.sign.extractionConfidence * 20)
+        : Math.round(45 + input.sign.extractionConfidence * 20),
+      reason: completeSignpost
+        ? "Official GIS context and a readable, complete signpost agree."
+        : "The visible parking rule is readable, but the complete signpost may not be shown.",
     },
     zone: input.gis.zone,
     paymentRequiredNow,

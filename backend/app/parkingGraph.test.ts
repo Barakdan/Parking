@@ -31,10 +31,13 @@ test("rejects missing and non-sign images", () => {
   })) ?? "", /enough parking-sign evidence/);
 });
 
-test("rejects unreadable, incomplete, and low-confidence signs", () => {
+test("rejects unreadable and low-confidence signs", () => {
   assert.match(getSignValidationFailure(sign({ readable: false })) ?? "", /could not be read/);
-  assert.match(getSignValidationFailure(sign({ allPanelsVisible: false })) ?? "", /complete signpost/);
   assert.match(getSignValidationFailure(sign({ extractionConfidence: 0.54 })) ?? "", /too low/);
+});
+
+test("accepts a conclusive visible rule when the full signpost is not shown", () => {
+  assert.equal(getSignValidationFailure(sign({ allPanelsVisible: false })), null);
 });
 
 test("accepts strong parking evidence when the classifier flag is wrong", () => {

@@ -32,7 +32,6 @@ export function getSignValidationFailure(sign: ExtractedParkingSign | null): str
     return "The image did not contain enough parking-sign evidence for a verdict.";
   }
   if (!sign.readable) return "The parking sign text could not be read reliably.";
-  if (!sign.allPanelsVisible) return "The complete signpost is not visible in the submitted image.";
   if (sign.extractionConfidence < 0.55) return "The sign extraction confidence is too low for a parking verdict.";
   if (sign.parkingPermitted === null) return "The sign's parking permission could not be determined.";
   return null;
