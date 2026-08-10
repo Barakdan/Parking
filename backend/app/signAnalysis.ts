@@ -19,7 +19,7 @@ export interface SignImage {
 
 function parseResidentZones(text: string): number[] {
   const zones = new Set<number>();
-  for (const match of text.matchAll(/(?:permit|zone|אזור|רשיון)\s*([^\n,.;]+)/gi)) {
+  for (const match of text.matchAll(/(?:permit|zone|אזור|רשיון|רישיון|תו\s*אזורי)\s*([^\n,.;]+)/gi)) {
     const chunk = match[1];
     for (const numMatch of chunk.matchAll(/\d+/g)) {
       zones.add(Number(numMatch[0]));
@@ -54,7 +54,7 @@ function parseWeekdays(text: string): number[] {
   return Array.from(days).sort((a, b) => a - b);
 }
 
-function detectParkingPermission(text: string): boolean | null {
+export function detectParkingPermissionFromText(text: string): boolean | null {
   const normalized = text.toLowerCase();
   const prohibited = [
     "אין חניה",
@@ -63,6 +63,15 @@ function detectParkingPermission(text: string): boolean | null {
     "parking prohibited",
     "do not park",
     "no stopping",
+    "אסור לחנות",
+    "אסורה החניה",
+    "אסורה החנייה",
+    "החניה אסורה",
+    "החנייה אסורה",
+    "עצירה וחניה אסורות",
+    "עצירה וחנייה אסורות",
+    "ללא חניה",
+    "ללא חנייה",
   ];
   const allowed = [
     "חניה מותרת",
@@ -70,6 +79,13 @@ function detectParkingPermission(text: string): boolean | null {
     "parking allowed",
     "parking permitted",
     "allowed parking",
+    "מותר לחנות",
+    "החניה מותרת",
+    "החנייה מותרת",
+    "חניה בתשלום",
+    "חנייה בתשלום",
+    "חניה מוסדרת",
+    "חנייה מוסדרת",
   ];
 
   if (prohibited.some((term) => normalized.includes(term))) return false;
@@ -173,7 +189,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     body: JSON.stringify({
       contents: [{
         parts: [
-          { text: "Inspect the image for any visible parking or curb-regulation sign. A close-up of one valid sign panel counts even when the pole, curb, or complete signpost is outside the frame. Always transcribe all readable sign text into rawText, even if you are uncertain whether it is a parking sign. Then extract the visible rule without inventing text or rules. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. Use null only when a rule genuinely cannot be determined from the visible text. For an unrelated image, keep rawText as any actually visible text but set parking rule fields to null or empty arrays." },
+          { text: "Inspect the image for any visible parking or curb-regulation sign. Signs are commonly in Hebrew and may use standard Israeli road-sign symbols, so interpret both the symbol and Hebrew supplemental panels. A close-up of one valid sign panel counts even when the pole, curb, or complete signpost is outside the frame. Always transcribe all readable sign text exactly into rawText. Set parkingPermitted to false for a no-parking/no-stopping symbol or prohibitive wording such as אין חניה, אסור לחנות, or החניה אסורה. Set it to true when parking is allowed conditionally, including paid parking, specified hours, resident permits, or wording such as חניה בתשלום, מותר לחנות, or החניה מותרת. Apply restrictions, hours, weekdays, and permit zones separately. Use null only when neither the visible symbol nor text establishes a parking meaning; do not use null merely because the rule has conditions. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. For an unrelated image, keep rawText as any actually visible text but set parking rule fields to null or empty arrays." },
           { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         ],
       }],
@@ -206,7 +222,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
   const timeRange = parseTimeRange(rawText);
   const restrictionStart = parsed?.restrictionStart ?? timeRange.start;
   const restrictionEnd = parsed?.restrictionEnd ?? timeRange.end;
-  const detectedPermission = detectParkingPermission(rawText);
+  const detectedPermission = detectParkingPermissionFromText(rawText);
   const hasConditionalParkingRule =
     residentPermitZones.length > 0 ||
     (restrictionStart !== null && restrictionEnd !== null);
