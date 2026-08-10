@@ -173,7 +173,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     body: JSON.stringify({
       contents: [{
         parts: [
-          { text: "First determine whether the image clearly shows a parking signpost. Never infer parking rules from a street scene, vehicle, curb, or unrelated image. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. Use null for rules that cannot be determined. If this is not a parking signpost, set isSignpost, readable, and allPanelsVisible to false, extractionConfidence to 0, rawText to an empty string, and all rule fields to null or empty arrays." },
+          { text: "Inspect the image for any visible parking or curb-regulation sign. A close-up of one valid sign panel counts even when the pole, curb, or complete signpost is outside the frame. Always transcribe all readable sign text into rawText, even if you are uncertain whether it is a parking sign. Then extract the visible rule without inventing text or rules. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. Use null only when a rule genuinely cannot be determined from the visible text. For an unrelated image, keep rawText as any actually visible text but set parking rule fields to null or empty arrays." },
           { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         ],
       }],
@@ -202,25 +202,33 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
 
   const rawText = (parsed?.rawText ? String(parsed.rawText).trim() : rawOutput).trim();
   const notes = buildGoogleNotes(parsed?.notes);
-  const parkingPermitted = parsed?.parkingPermitted ?? detectParkingPermission(rawText);
   const residentPermitZones = parsed?.residentPermitZones ?? parseResidentZones(rawText);
   const timeRange = parseTimeRange(rawText);
   const restrictionStart = parsed?.restrictionStart ?? timeRange.start;
   const restrictionEnd = parsed?.restrictionEnd ?? timeRange.end;
+  const detectedPermission = detectParkingPermission(rawText);
+  const hasConditionalParkingRule =
+    residentPermitZones.length > 0 ||
+    (restrictionStart !== null && restrictionEnd !== null);
+  const parkingPermitted =
+    parsed?.parkingPermitted ??
+    detectedPermission ??
+    (hasConditionalParkingRule ? true : null);
   const hasStructuredParkingEvidence =
     rawText.length >= 5 &&
     (typeof parkingPermitted === "boolean" ||
       residentPermitZones.length > 0 ||
       (restrictionStart !== null && restrictionEnd !== null));
+  const hasReadableText = rawText.length >= 4;
   const isSignpost = parsed?.isSignpost === true || hasStructuredParkingEvidence;
   const reportedConfidence = Math.max(0, Math.min(1, Number(parsed?.extractionConfidence) || 0));
-  const extractionConfidence = hasStructuredParkingEvidence
-    ? Math.max(0.6, reportedConfidence)
+  const extractionConfidence = hasStructuredParkingEvidence || hasReadableText
+    ? Math.max(0.55, reportedConfidence)
     : reportedConfidence;
 
   return {
     isSignpost,
-    readable: isSignpost && (parsed?.readable === true || hasStructuredParkingEvidence),
+    readable: parsed?.readable === true || hasStructuredParkingEvidence || hasReadableText,
     allPanelsVisible:
       isSignpost &&
       (parsed?.allPanelsVisible === true ||

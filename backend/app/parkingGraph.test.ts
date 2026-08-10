@@ -28,7 +28,7 @@ test("rejects missing and non-sign images", () => {
     extractionConfidence: 0,
     parkingPermitted: null,
     rawText: "",
-  })) ?? "", /enough parking-sign evidence/);
+  })) ?? "", /No readable parking-sign text/);
 });
 
 test("rejects unreadable and low-confidence signs", () => {

@@ -143,13 +143,13 @@
             const image = new Image();
             image.onerror = () => reject(new Error('The selected file is not a readable image.'));
             image.onload = () => {
-              const maxDimension = 1600;
+              const maxDimension = 2200;
               const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
               const canvas = document.createElement('canvas');
               canvas.width = Math.max(1, Math.round(image.width * scale));
               canvas.height = Math.max(1, Math.round(image.height * scale));
               canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
               resolve({ mimeType: 'image/jpeg', base64: dataUrl.split(',')[1] ?? '' });
             };
             image.src = String(reader.result);

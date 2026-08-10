@@ -28,8 +28,9 @@ export function getSignValidationFailure(sign: ExtractedParkingSign | null): str
     (typeof sign.parkingPermitted === "boolean" ||
       sign.residentPermitZones.length > 0 ||
       (sign.restrictionStart !== null && sign.restrictionEnd !== null));
-  if (!sign.isSignpost && !hasParkingEvidence) {
-    return "The image did not contain enough parking-sign evidence for a verdict.";
+  const hasReadableSignText = sign.readable && sign.rawText.trim().length >= 4;
+  if (!sign.isSignpost && !hasParkingEvidence && !hasReadableSignText) {
+    return "No readable parking-sign text was found in the image.";
   }
   if (!sign.readable) return "The parking sign text could not be read reliably.";
   if (sign.extractionConfidence < 0.55) return "The sign extraction confidence is too low for a parking verdict.";
