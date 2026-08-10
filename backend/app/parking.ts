@@ -127,6 +127,10 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     input.driver.residentPermitZone === input.gis.zone.number;
   const paymentHoursActive = standardPaymentIsActive(input.gis, time);
   const paymentRequiredNow = paymentHoursActive && !permitMatches;
+  const hasLimitedDisabledSubset =
+    input.sign?.disabledPermitRequired === true &&
+    input.sign.reservedDisabledSpaces !== null &&
+    input.sign.reservedDisabledSpaces > 0;
   const qualifiesForSpecialUse =
     (input.sign?.loadingOnly === true && input.driver.isActivelyLoading === true) ||
     (input.sign?.disabledPermitRequired === true && input.driver.hasDisabledParkingPermit === true);
@@ -212,10 +216,19 @@ export function evaluateParking(input: ParkingEvaluationInput): ParkingEvaluatio
     (input.sign.parkingPermitted === false ||
       (input.sign.generalParkingAllowed === false && !qualifiesForSpecialUse) ||
       (input.sign.loadingOnly && input.driver.isActivelyLoading !== true) ||
-      (input.sign.disabledPermitRequired && input.driver.hasDisabledParkingPermit !== true) ||
+      (input.sign.disabledPermitRequired &&
+        !hasLimitedDisabledSubset &&
+        input.driver.hasDisabledParkingPermit !== true) ||
       !permitAllowed);
 
   explanation.push(`Sign text: ${input.sign.rawText}`);
+
+  if (hasLimitedDisabledSubset && input.driver.hasDisabledParkingPermit !== true) {
+    const description = input.sign.disabledSpaceDescription ??
+      `${input.sign.reservedDisabledSpaces} marked space${input.sign.reservedDisabledSpaces === 1 ? "" : "s"}`;
+    warnings.push(`${description} are reserved for disabled-permit vehicles; the verdict applies only to the remaining ordinary spaces.`);
+    explanation.push(`Ordinary parking is not allowed in ${description}.`);
+  }
 
   if (prohibited) {
     if (input.sign.loadingOnly) {

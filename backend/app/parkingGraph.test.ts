@@ -14,6 +14,7 @@ function sign(overrides: Partial<ExtractedParkingSign> = {}): ExtractedParkingSi
     loadingOnly: false,
     disabledPermitRequired: false,
     reservedDisabledSpaces: null,
+    disabledSpaceDescription: null,
     residentPermitZones: [],
     restrictionStart: null,
     restrictionEnd: null,

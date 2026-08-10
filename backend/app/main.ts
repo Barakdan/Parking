@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { getGisParkingContext, type LocationInput } from "./gis.js";
 import type { DriverContext } from "./parking.js";
 import { runParkingWorkflow } from "./parkingGraph.js";
+import { assessPhotoLocation } from "./photoLocation.js";
 import type { ExtractedParkingSign, SignImage } from "./signAnalysis.js";
 
 interface ParkingCheckRequest extends LocationInput, DriverContext {
@@ -129,6 +130,7 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const photoLocationValidation = assessPhotoLocation(body.signImages?.[0], body);
     const { sign, result, validationFailure } = await runParkingWorkflow({
       gis,
       images: body.signImages ?? [],
@@ -140,7 +142,7 @@ const server = createServer(async (request, response) => {
         isActivelyLoading: body.isActivelyLoading ?? false,
       },
     });
-    if (sign && !validationFailure) {
+    if (sign && !validationFailure && photoLocationValidation.verified) {
       cachedSigns.push({
         latitude: body.latitude,
         longitude: body.longitude,
@@ -150,11 +152,31 @@ const server = createServer(async (request, response) => {
       });
     }
 
+    const locationAdjustedResult = photoLocationValidation.verified
+      ? result
+      : {
+          ...result,
+          confidence: {
+            level: "low" as const,
+            score: Math.min(result.confidence.score, 40),
+            reason: `${result.confidence.reason} Photo location was not verified.`,
+          },
+          warnings: [...result.warnings, photoLocationValidation.note],
+        };
+
     sendJson(request, response, 200, {
-      ...result,
+      ...locationAdjustedResult,
       signAnalysis: sign,
+      photoLocationValidation: {
+        status: photoLocationValidation.status,
+        verified: photoLocationValidation.verified,
+        distanceMeters: photoLocationValidation.distanceMeters === null
+          ? null
+          : Math.round(photoLocationValidation.distanceMeters),
+        maxDistanceMeters: photoLocationValidation.maxDistanceMeters,
+      },
       cacheHit: false,
-      needsPhoto: result.decision === "uncertain",
+      needsPhoto: locationAdjustedResult.decision === "uncertain",
     });
   } catch (error) {
     sendJson(request, response, 400, {

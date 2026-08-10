@@ -25,6 +25,7 @@ function specialSign(overrides: Partial<ExtractedParkingSign>): ExtractedParking
     loadingOnly: false,
     disabledPermitRequired: false,
     reservedDisabledSpaces: null,
+    disabledSpaceDescription: null,
     residentPermitZones: [],
     restrictionStart: null,
     restrictionEnd: null,
@@ -46,13 +47,28 @@ test("ordinary parking is prohibited in loading-only areas", () => {
   assert.match(result.explanation.at(-1) ?? "", /loading and unloading/);
 });
 
-test("ordinary parking is prohibited in disabled-permit spaces", () => {
+test("limited disabled spaces do not prohibit the remaining ordinary spaces", () => {
   const result = evaluateParking({
     gis,
     driver: { isTelAvivResident: false },
-    sign: specialSign({ disabledPermitRequired: true, reservedDisabledSpaces: 2 }),
+    sign: specialSign({
+      disabledPermitRequired: true,
+      reservedDisabledSpaces: 2,
+      disabledSpaceDescription: "the first 2 spaces",
+      generalParkingAllowed: true,
+    }),
+    checkedAt: new Date("2026-08-10T10:00:00Z"),
+  });
+  assert.equal(result.decision, "allowed");
+  assert.match(result.warnings.at(-1) ?? "", /first 2 spaces/);
+});
+
+test("an all-space disabled restriction prohibits ordinary parking", () => {
+  const result = evaluateParking({
+    gis,
+    driver: { isTelAvivResident: false },
+    sign: specialSign({ disabledPermitRequired: true }),
     checkedAt: new Date("2026-08-10T10:00:00Z"),
   });
   assert.equal(result.decision, "prohibited");
-  assert.match(result.explanation.at(-1) ?? "", /2 spaces/);
 });

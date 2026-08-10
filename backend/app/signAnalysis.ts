@@ -8,6 +8,7 @@ export interface ExtractedParkingSign {
   loadingOnly: boolean;
   disabledPermitRequired: boolean;
   reservedDisabledSpaces: number | null;
+  disabledSpaceDescription: string | null;
   residentPermitZones: number[];
   restrictionStart: string | null;
   restrictionEnd: string | null;
@@ -19,6 +20,10 @@ export interface ExtractedParkingSign {
 export interface SignImage {
   mimeType: "image/jpeg" | "image/png" | "image/webp";
   base64: string;
+  photoLocation?: {
+    latitude: number;
+    longitude: number;
+  };
 }
 
 function parseResidentZones(text: string): number[] {
@@ -209,7 +214,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     body: JSON.stringify({
       contents: [{
         parts: [
-          { text: "Analyze the visible Israeli parking sign and fill the required response schema. Do not include commentary outside the schema. Interpret the main symbol and every Hebrew supplemental panel together. parkingPermitted describes whether some explicitly eligible vehicle or activity may park. generalParkingAllowed specifically describes whether an ordinary private car, with no disabled permit and not actively loading/unloading, may park. Set loadingOnly=true for פריקה וטעינה or loading/unloading-only areas. Set disabledPermitRequired=true for disabled-badge spaces, including חניית נכים. Extract a stated number of disabled/reserved spaces into reservedDisabledSpaces (for example, 2 for '2 מקומות ראשונים לנכים'). Special-purpose permission must never become generalParkingAllowed=true. A close-up of the complete visible sign assembly counts as allPanelsVisible even when the pole or curb is outside the frame. Transcribe all readable sign text exactly into rawText. Set parkingPermitted=false for no-parking/no-stopping. Set parkingPermitted=true for conditional parking, but set generalParkingAllowed=false when it is limited to loading, disabled vehicles, taxis, buses, or another reserved use. Apply restrictions, hours, weekdays, permit zones, arrows, distances, and space counts separately. Weekday integers use 0=Sunday through 6=Saturday; ימים א'-ה' is [0,1,2,3,4]. Use null only when the visible symbol and text genuinely do not establish the value." },
+          { text: "Analyze the visible Israeli parking sign and fill the required response schema. Do not include commentary outside the schema. Interpret the main symbol and every Hebrew supplemental panel together. parkingPermitted describes whether some explicitly eligible vehicle or activity may park. generalParkingAllowed specifically describes whether an ordinary private car, with no disabled permit and not actively loading/unloading, may park somewhere in the signed area. Set loadingOnly=true for פריקה וטעינה or loading/unloading-only areas. Set disabledPermitRequired=true when any spaces require a disabled badge. Extract a stated count into reservedDisabledSpaces and describe exactly which spaces in disabledSpaceDescription, for example 'the first 2 spaces'. If only a limited subset is disabled-only and ordinary parking is allowed in the remaining spaces, set generalParkingAllowed=true; do not mark the entire area prohibited. Set generalParkingAllowed=false only when the restriction covers all relevant spaces or no ordinary spaces remain. A close-up of the complete visible sign assembly counts as allPanelsVisible even when the pole or curb is outside the frame. Transcribe all readable sign text exactly into rawText. Set parkingPermitted=false for no-parking/no-stopping. Apply restrictions, hours, weekdays, permit zones, arrows, distances, and space counts separately. Weekday integers use 0=Sunday through 6=Saturday; ימים א'-ה' is [0,1,2,3,4]. Use null only when the visible symbol and text genuinely do not establish the value." },
           { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         ],
       }],
@@ -229,6 +234,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
             "loadingOnly",
             "disabledPermitRequired",
             "reservedDisabledSpaces",
+            "disabledSpaceDescription",
             "residentPermitZones",
             "restrictionStart",
             "restrictionEnd",
@@ -246,6 +252,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
             loadingOnly: { type: "BOOLEAN" },
             disabledPermitRequired: { type: "BOOLEAN" },
             reservedDisabledSpaces: { type: "INTEGER", nullable: true },
+            disabledSpaceDescription: { type: "STRING", nullable: true },
             residentPermitZones: { type: "ARRAY", items: { type: "INTEGER" } },
             restrictionStart: { type: "STRING", nullable: true },
             restrictionEnd: { type: "STRING", nullable: true },
@@ -292,16 +299,29 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
   const loadingOnly = parseBoolean(firstDefined(parsed?.loadingOnly, parsed?.loading_only)) === true;
   const disabledPermitRequired =
     parseBoolean(firstDefined(parsed?.disabledPermitRequired, parsed?.disabled_permit_required)) === true;
-  const parsedGeneralPermission = parseBoolean(
-    firstDefined(parsed?.generalParkingAllowed, parsed?.general_parking_allowed),
-  );
-  const generalParkingAllowed = loadingOnly || disabledPermitRequired
-    ? false
-    : parsedGeneralPermission ?? parkingPermitted;
   const reservedSpacesValue = firstDefined(parsed?.reservedDisabledSpaces, parsed?.reserved_disabled_spaces);
   const reservedDisabledSpaces = Number.isFinite(Number(reservedSpacesValue))
     ? Number(reservedSpacesValue)
     : null;
+  const disabledSpaceDescriptionValue = firstDefined(
+    parsed?.disabledSpaceDescription,
+    parsed?.disabled_space_description,
+  );
+  const disabledSpaceDescription = disabledSpaceDescriptionValue
+    ? String(disabledSpaceDescriptionValue).trim()
+    : null;
+  const hasLimitedDisabledSubset =
+    disabledPermitRequired && reservedDisabledSpaces !== null && reservedDisabledSpaces > 0;
+  const parsedGeneralPermission = parseBoolean(
+    firstDefined(parsed?.generalParkingAllowed, parsed?.general_parking_allowed),
+  );
+  const generalParkingAllowed = loadingOnly
+    ? false
+    : hasLimitedDisabledSubset
+      ? parkingPermitted ?? parsedGeneralPermission
+      : disabledPermitRequired
+        ? false
+        : parsedGeneralPermission ?? parkingPermitted;
   const hasStructuredParkingEvidence =
     rawText.length >= 5 &&
     (typeof parkingPermitted === "boolean" ||
@@ -330,6 +350,7 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     loadingOnly,
     disabledPermitRequired,
     reservedDisabledSpaces,
+    disabledSpaceDescription,
     residentPermitZones,
     restrictionStart,
     restrictionEnd,

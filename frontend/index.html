@@ -109,9 +109,10 @@
   <body>
     <main>
       <h1>Can I Park Here?</h1>
-      <p>Use a Tel Aviv test location and send it to the backend.</p>
-      <label for="locationSelect" class="note">Select a Tel Aviv test location:</label>
+      <p>Check your current location or choose a test location.</p>
+      <label for="locationSelect" class="note">Location source:</label>
       <select id="locationSelect" class="location-select">
+        <option value="">My current location (default)</option>
         <option value="32.07501,34.77751">Dizengoff Square</option>
         <option value="32.06649,34.77750">Rothschild Boulevard</option>
         <option value="32.09019,34.77402">Tel Aviv Port</option>
@@ -123,6 +124,8 @@
       <p id="status" class="note">Checking configuration…</p>
     </main>
     <script type="module">
+      import { gps as readPhotoGps } from 'exifr';
+
       const button = document.getElementById('checkButton');
       const status = document.getElementById('status');
       const locationSelect = document.getElementById('locationSelect');
@@ -152,10 +155,12 @@
           if (sign.loadingOnly) {
             ruleParts.push('allows stopping only for active loading and unloading');
           } else if (sign.disabledPermitRequired) {
-            const spaceCount = sign.reservedDisabledSpaces
-              ? ` for ${sign.reservedDisabledSpaces} space${sign.reservedDisabledSpaces === 1 ? '' : 's'}`
-              : '';
-            ruleParts.push(`reserves parking for disabled-permit vehicles${spaceCount}`);
+            const reservedArea = sign.disabledSpaceDescription || (sign.reservedDisabledSpaces
+              ? `${sign.reservedDisabledSpaces} marked space${sign.reservedDisabledSpaces === 1 ? '' : 's'}`
+              : null);
+            ruleParts.push(reservedArea
+              ? `reserves ${reservedArea} for disabled-permit vehicles; ordinary parking may use only the remaining spaces`
+              : 'reserves this parking area for disabled-permit vehicles');
           } else if (sign.generalParkingAllowed === true) {
             ruleParts.push('allows ordinary parking');
           } else if (sign.generalParkingAllowed === false) {
@@ -231,15 +236,40 @@
         return { latitude: lat, longitude: lng };
       }
 
+      function getCurrentLocation() {
+        return new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error('Geolocation is not supported by this device. Choose a test location instead.'));
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              gpsAccuracyMeters: position.coords.accuracy,
+            }),
+            (error) => {
+              const message = error.code === error.PERMISSION_DENIED
+                ? 'Location permission was denied. Allow location access or choose a test location.'
+                : 'Your location could not be determined. Try again or choose a test location.';
+              reject(new Error(message));
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+          );
+        });
+      }
+
       setStatus(
         apiUrl
-          ? 'Ready. Tap the button to send a Tel Aviv test location.'
+          ? 'Ready. Tap the button and allow location access, or choose a test location.'
           : 'VITE_API_URL is not configured at build time. Check frontend Render env.',
         !apiUrl
       );
 
       let photoRequired = false;
       let requestInFlight = false;
+      let activeLocation = null;
       const photoInput = document.getElementById('photoInput');
 
       async function readResponse(response) {
@@ -252,8 +282,15 @@
         }
       }
 
-      function prepareImage(file) {
-        return new Promise((resolve, reject) => {
+      async function prepareImage(file) {
+        let photoGps = null;
+        try {
+          photoGps = await readPhotoGps(file);
+        } catch {
+          // The backend treats missing GPS as lower-confidence evidence.
+        }
+
+        const compressedImage = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onerror = () => reject(new Error('Could not read the selected photo.'));
           reader.onload = () => {
@@ -273,6 +310,19 @@
           };
           reader.readAsDataURL(file);
         });
+
+        const prepared = {
+          ...compressedImage,
+        };
+
+        if (photoGps && Number.isFinite(photoGps.latitude) && Number.isFinite(photoGps.longitude)) {
+          prepared.photoLocation = {
+            latitude: photoGps.latitude,
+            longitude: photoGps.longitude,
+          };
+        }
+
+        return prepared;
       }
 
       async function sendLocation(position) {
@@ -285,7 +335,7 @@
         const payload = {
           latitude: position.latitude,
           longitude: position.longitude,
-          gpsAccuracyMeters: 10,
+          gpsAccuracyMeters: position.gpsAccuracyMeters ?? 10,
           isTelAvivResident: false,
           residentPermitZone: '',
           hasDisabledParkingPermit: false,
@@ -322,7 +372,7 @@
         }
       }
 
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         if (requestInFlight) return;
         if (!apiUrl) {
           setStatus('VITE_API_URL is not configured at build time. Check frontend Render env.', true);
@@ -334,18 +384,37 @@
           return;
         }
 
-        const selected = locationSelect.value;
-        if (!selected) {
-          setStatus('Please select a test location.', true);
-          return;
-        }
-
         button.disabled = true;
         requestInFlight = true;
-        setButtonState(null, 'Checking…');
-        setStatus('Sending test location…');
+        setButtonState(null, locationSelect.value ? 'Checking…' : 'Locating…');
+        setStatus(locationSelect.value ? 'Checking test location…' : 'Getting your current location…');
 
-        sendLocation(parseLocation(selected)).finally(() => { requestInFlight = false; });
+        try {
+          activeLocation = locationSelect.value
+            ? { ...parseLocation(locationSelect.value), gpsAccuracyMeters: 10 }
+            : await getCurrentLocation();
+          setButtonState(null, 'Checking…');
+          setStatus('Checking parking rules at this location…');
+          await sendLocation(activeLocation);
+        } catch (error) {
+          setButtonState(null, 'Check Parking Here');
+          setStatus(error instanceof Error ? error.message : 'Unable to determine location.', true);
+          button.disabled = false;
+        } finally {
+          requestInFlight = false;
+        }
+      });
+
+      locationSelect.addEventListener('change', () => {
+        activeLocation = null;
+        photoRequired = false;
+        setButtonState(null, 'Check Parking Here');
+        setStatus(
+          locationSelect.value
+            ? 'Test location selected. Tap the button to check it.'
+            : 'Current location selected. Tap the button and allow location access.',
+          false,
+        );
       });
 
       photoInput.addEventListener('change', async () => {
@@ -358,6 +427,13 @@
 
         if (!apiUrl) {
           setStatus('VITE_API_URL is not configured. Check your build settings.', true);
+          return;
+        }
+
+        if (!activeLocation) {
+          setStatus('Check a location before uploading a signpost photo.', true);
+          photoRequired = false;
+          setButtonState(null, 'Check Parking Here');
           return;
         }
 
@@ -377,9 +453,9 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                latitude: parseLocation(locationSelect.value).latitude,
-                longitude: parseLocation(locationSelect.value).longitude,
-                gpsAccuracyMeters: 10,
+                latitude: activeLocation.latitude,
+                longitude: activeLocation.longitude,
+                gpsAccuracyMeters: activeLocation.gpsAccuracyMeters ?? 10,
                 isTelAvivResident: false,
                 residentPermitZone: '',
                 hasDisabledParkingPermit: false,
