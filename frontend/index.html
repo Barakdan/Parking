@@ -145,6 +145,39 @@
           /prohibit|permit|allowed|requires|could not|not visible|not recognized|evidence/i.test(line)
         );
         const parts = [];
+        const sign = data.signAnalysis;
+
+        if (sign) {
+          const ruleParts = [];
+          if (sign.parkingPermitted === true) ruleParts.push('allows parking');
+          if (sign.parkingPermitted === false) ruleParts.push('prohibits parking');
+
+          if (sign.residentPermitZones?.length) {
+            ruleParts.push(`for permit zone ${sign.residentPermitZones.join(', ')}`);
+          }
+
+          if (sign.restrictionStart && sign.restrictionEnd) {
+            ruleParts.push(`from ${sign.restrictionStart} to ${sign.restrictionEnd}`);
+          }
+
+          if (sign.applicableWeekdays?.length) {
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const days = sign.applicableWeekdays.map((day) => dayNames[day]).filter(Boolean);
+            if (days.length) ruleParts.push(`on ${days.join(', ')}`);
+          }
+
+          if (ruleParts.length) {
+            parts.push(`The sign ${ruleParts.join(' ')}.`);
+          }
+
+          const transcribedText = String(sign.rawText || '').replace(/\s+/g, ' ').trim();
+          if (transcribedText) {
+            const shortenedText = transcribedText.length > 240
+              ? transcribedText.slice(0, 237) + '…'
+              : transcribedText;
+            parts.push(`Detected text: “${shortenedText}”`);
+          }
+        }
 
         if (decisionReason) parts.push(decisionReason);
         if (data.decision === 'allowed' && data.paymentAppMustBeActivated) {

@@ -115,7 +115,11 @@ const server = createServer(async (request, response) => {
           },
         });
 
-        sendJson(request, response, 200, { ...result, cacheHit: true });
+        sendJson(request, response, 200, {
+          ...result,
+          signAnalysis: cached.sign,
+          cacheHit: true,
+        });
         return;
       }
 
