@@ -29,13 +29,16 @@ function parseResidentZones(text: string): number[] {
 }
 
 function parseTimeRange(text: string): { start: string | null; end: string | null } {
-  const match = text.match(/(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/);
+  const match = text.match(/(?:מ\s*[-־]?\s*)?(\d{1,2}:\d{2})\s*(?:[-–—]|עד)\s*(\d{1,2}:\d{2})/);
   return match ? { start: match[1], end: match[2] } : { start: null, end: null };
 }
 
 function parseWeekdays(text: string): number[] {
   const words = text.toLowerCase();
   const days = new Set<number>();
+
+  if (/ימים?\s+א['׳]?\s*[-–—]\s*ו['׳]?/.test(words)) return [0, 1, 2, 3, 4, 5];
+  if (/ימים?\s+א['׳]?\s*[-–—]\s*ה['׳]?/.test(words)) return [0, 1, 2, 3, 4];
 
   if (/(sun|ראשון)/.test(words)) days.add(0);
   if (/(mon|שני)/.test(words)) days.add(1);
@@ -46,7 +49,7 @@ function parseWeekdays(text: string): number[] {
   if (/(sat|שבת)/.test(words)) days.add(6);
 
   if (days.size === 0) {
-    if (/(weekdays|business days|ימי חול|ימים א-ה)/.test(words)) return [1, 2, 3, 4, 5];
+    if (/(weekdays|business days|ימי חול)/.test(words)) return [1, 2, 3, 4, 5];
     if (/(friday|שישי)/.test(words)) return [5];
     return [1, 2, 3, 4, 5];
   }
@@ -202,13 +205,42 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     body: JSON.stringify({
       contents: [{
         parts: [
-          { text: "Inspect the image for any visible parking or curb-regulation sign. Signs are commonly in Hebrew and may use standard Israeli road-sign symbols, so interpret both the symbol and Hebrew supplemental panels. A close-up of one valid sign panel counts even when the pole, curb, or complete signpost is outside the frame. Always transcribe all readable sign text exactly into rawText. Set parkingPermitted to false for a no-parking/no-stopping symbol or prohibitive wording such as אין חניה, אסור לחנות, or החניה אסורה. Set it to true when parking is allowed conditionally, including paid parking, specified hours, resident permits, or wording such as חניה בתשלום, מותר לחנות, or החניה מותרת. Apply restrictions, hours, weekdays, and permit zones separately. Use null only when neither the visible symbol nor text establishes a parking meaning; do not use null merely because the rule has conditions. Return only valid JSON with keys: isSignpost, readable, allPanelsVisible, extractionConfidence, rawText, parkingPermitted, residentPermitZones, restrictionStart, restrictionEnd, applicableWeekdays, notes. extractionConfidence must be from 0 to 1. For an unrelated image, keep rawText as any actually visible text but set parking rule fields to null or empty arrays." },
+          { text: "Analyze the visible Israeli parking sign and fill the required response schema. Do not include commentary outside the schema. Signs are commonly in Hebrew and may use standard Israeli road-sign symbols, so interpret both the main symbol and Hebrew supplemental panels together. A close-up of the complete visible sign assembly counts as allPanelsVisible even when the pole or curb is outside the frame. Transcribe all readable sign text exactly into rawText. Set parkingPermitted to false for a no-parking/no-stopping symbol or prohibitive wording such as אין חניה, אסור לחנות, or החניה אסורה. Set it to true when parking is allowed conditionally, including paid parking, specified hours, resident permits, or wording such as חניה בתשלום, מותר לחנות, or החניה מותרת. Use the main sign symbol to determine permission when the supplemental Hebrew panel only contains distance, days, or hours. Apply restrictions, hours, weekdays, and permit zones separately. Weekday integers must use 0=Sunday, 1=Monday, ..., 6=Saturday; therefore Hebrew ימים א'-ה' is [0,1,2,3,4]. Use null only when neither the visible symbol nor text establishes a parking meaning; do not use null merely because the rule has conditions." },
           { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         ],
       }],
       generationConfig: {
-        maxOutputTokens: 1024,
+        maxOutputTokens: 4096,
         responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          required: [
+            "isSignpost",
+            "readable",
+            "allPanelsVisible",
+            "extractionConfidence",
+            "rawText",
+            "parkingPermitted",
+            "residentPermitZones",
+            "restrictionStart",
+            "restrictionEnd",
+            "applicableWeekdays",
+            "notes",
+          ],
+          properties: {
+            isSignpost: { type: "BOOLEAN" },
+            readable: { type: "BOOLEAN" },
+            allPanelsVisible: { type: "BOOLEAN" },
+            extractionConfidence: { type: "NUMBER", minimum: 0, maximum: 1 },
+            rawText: { type: "STRING" },
+            parkingPermitted: { type: "BOOLEAN", nullable: true },
+            residentPermitZones: { type: "ARRAY", items: { type: "INTEGER" } },
+            restrictionStart: { type: "STRING", nullable: true },
+            restrictionEnd: { type: "STRING", nullable: true },
+            applicableWeekdays: { type: "ARRAY", items: { type: "INTEGER" } },
+            notes: { type: "ARRAY", items: { type: "STRING" } },
+          },
+        },
       },
     }),
   });
