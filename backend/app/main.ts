@@ -144,6 +144,7 @@ const server = createServer(async (request, response) => {
 
     sendJson(request, response, 200, {
       ...result,
+      signAnalysis: sign,
       cacheHit: false,
       needsPhoto: result.decision === "uncertain",
     });

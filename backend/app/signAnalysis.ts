@@ -162,6 +162,19 @@ function buildGoogleNotes(parsedNotes: unknown): string[] {
   return ["Parsed using Google AI Studio image analysis."];
 }
 
+function firstDefined<T>(...values: T[]): T | undefined {
+  return values.find((value) => value !== undefined && value !== null);
+}
+
+function parseBoolean(value: unknown): boolean | null {
+  if (value === true || value === false) return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "yes", "allowed", "permitted", "מותר", "מותרת"].includes(normalized)) return true;
+  if (["false", "no", "prohibited", "forbidden", "אסור", "אסורה"].includes(normalized)) return false;
+  return null;
+}
+
 async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingSign> {
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   const model = process.env.GEMINI_MODEL ?? process.env.GOOGLE_MODEL;
@@ -216,45 +229,50 @@ async function analyzeWithGoogle(images: SignImage[]): Promise<ExtractedParkingS
     parsed = null;
   }
 
-  const rawText = (parsed?.rawText ? String(parsed.rawText).trim() : rawOutput).trim();
+  const parsedRawText = firstDefined(parsed?.rawText, parsed?.raw_text, parsed?.signText, parsed?.sign_text);
+  const rawText = (parsedRawText ? String(parsedRawText).trim() : rawOutput).trim();
   const notes = buildGoogleNotes(parsed?.notes);
-  const residentPermitZones = parsed?.residentPermitZones ?? parseResidentZones(rawText);
+  const parsedZones = firstDefined(parsed?.residentPermitZones, parsed?.resident_permit_zones);
+  const residentPermitZones = Array.isArray(parsedZones)
+    ? parsedZones.map(Number).filter(Number.isFinite)
+    : parseResidentZones(rawText);
   const timeRange = parseTimeRange(rawText);
-  const restrictionStart = parsed?.restrictionStart ?? timeRange.start;
-  const restrictionEnd = parsed?.restrictionEnd ?? timeRange.end;
+  const restrictionStart = firstDefined(parsed?.restrictionStart, parsed?.restriction_start) ?? timeRange.start;
+  const restrictionEnd = firstDefined(parsed?.restrictionEnd, parsed?.restriction_end) ?? timeRange.end;
   const detectedPermission = detectParkingPermissionFromText(rawText);
   const hasConditionalParkingRule =
     residentPermitZones.length > 0 ||
     (restrictionStart !== null && restrictionEnd !== null);
-  const parkingPermitted =
-    parsed?.parkingPermitted ??
-    detectedPermission ??
-    (hasConditionalParkingRule ? true : null);
+  const parsedPermission = parseBoolean(firstDefined(parsed?.parkingPermitted, parsed?.parking_permitted));
+  const parkingPermitted = parsedPermission ?? detectedPermission ?? (hasConditionalParkingRule ? true : null);
   const hasStructuredParkingEvidence =
     rawText.length >= 5 &&
     (typeof parkingPermitted === "boolean" ||
       residentPermitZones.length > 0 ||
       (restrictionStart !== null && restrictionEnd !== null));
   const hasReadableText = rawText.length >= 4;
-  const isSignpost = parsed?.isSignpost === true || hasStructuredParkingEvidence;
-  const reportedConfidence = Math.max(0, Math.min(1, Number(parsed?.extractionConfidence) || 0));
+  const parsedIsSignpost = parseBoolean(firstDefined(parsed?.isSignpost, parsed?.is_signpost));
+  const parsedReadable = parseBoolean(parsed?.readable);
+  const parsedAllPanels = parseBoolean(firstDefined(parsed?.allPanelsVisible, parsed?.all_panels_visible));
+  const isSignpost = parsedIsSignpost === true || hasStructuredParkingEvidence;
+  const reportedConfidence = Math.max(0, Math.min(1, Number(firstDefined(parsed?.extractionConfidence, parsed?.extraction_confidence)) || 0));
   const extractionConfidence = hasStructuredParkingEvidence || hasReadableText
     ? Math.max(0.55, reportedConfidence)
     : reportedConfidence;
 
   return {
     isSignpost,
-    readable: parsed?.readable === true || hasStructuredParkingEvidence || hasReadableText,
+    readable: parsedReadable === true || hasStructuredParkingEvidence || hasReadableText,
     allPanelsVisible:
       isSignpost &&
-      (parsed?.allPanelsVisible === true ||
-        (parsed?.isSignpost === false && hasStructuredParkingEvidence)),
+      (parsedAllPanels === true ||
+        (parsedIsSignpost === false && hasStructuredParkingEvidence)),
     extractionConfidence,
     parkingPermitted,
     residentPermitZones,
     restrictionStart,
     restrictionEnd,
-    applicableWeekdays: parsed?.applicableWeekdays ?? parseWeekdays(rawText),
+    applicableWeekdays: firstDefined(parsed?.applicableWeekdays, parsed?.applicable_weekdays) ?? parseWeekdays(rawText),
     rawText,
     notes,
   };

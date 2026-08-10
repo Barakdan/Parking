@@ -267,8 +267,11 @@
             });
 
             const data = await readResponse(response);
+            const geminiDetails = data.signAnalysis
+              ? '\n\nGemini sign analysis:\n' + JSON.stringify(data.signAnalysis, null, 2)
+              : '';
             if (!response.ok) {
-              setStatus(data.error || 'Photo upload failed', true);
+              setStatus((data.error || 'Photo upload failed') + geminiDetails, true);
               photoRequired = true;
               button.textContent = 'Choose signpost photo';
               return;
@@ -276,13 +279,13 @@
 
             if (data.needsPhoto || data.decision === 'uncertain') {
               setStatus(
-                data.explanation?.at(-1) || 'The photo could not be verified. Please upload a clear photo of the complete signpost.',
+                (data.explanation?.at(-1) || 'The photo could not be verified. Please upload a clear photo of the complete signpost.') + geminiDetails,
                 true
               );
               photoRequired = true;
               button.textContent = 'Choose another signpost photo';
             } else {
-              setStatus('Parking result: ' + JSON.stringify(data), false);
+              setStatus('Parking result: ' + JSON.stringify(data) + geminiDetails, false);
               photoRequired = false;
               button.textContent = 'Check Parking Here';
             }
